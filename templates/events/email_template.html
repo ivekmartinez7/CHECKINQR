@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #f4f4f5; padding: 20px;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        
+        <!-- Header -->
+        <div style="background-color: #1e1e2f; color: #ffffff; padding: 30px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px; font-weight: bold;">Confirmación de Registro</h1>
+            <p style="margin: 10px 0 0 0; color: #a1a1aa; font-size: 14px;">Tu acceso al evento está listo</p>
+        </div>
+        
+        <!-- Body -->
+        <div style="padding: 30px;">
+            <p style="font-size: 16px; color: #3f3f46; margin-bottom: 20px;">
+                Hola <strong>{{ guest.name }}</strong>,
+            </p>
+            <p style="font-size: 16px; color: #3f3f46; line-height: 1.5;">
+                Tu inscripción ha sido confirmada exitosamente. Por favor, presenta el código QR adjunto en la entrada para registrar tu asistencia.
+            </p>
+            
+            <div style="background-color: #f8fafc; border-left: 4px solid #d4af37; padding: 15px; margin: 25px 0; border-radius: 4px;">
+                <h3 style="margin: 0 0 10px 0; color: #1e1e2f; font-size: 16px;">Detalles de tu acceso:</h3>
+                <ul style="list-style-type: none; padding: 0; margin: 0; color: #475569; line-height: 1.8; font-size: 14px;">
+                    <li><strong>🎫 Número de Pases:</strong> {{ guest.passes }}</li>
+                    <li><strong>🎲 Número de Sorteo:</strong> #{{ guest.raffle_number }}</li>
+                    <li><strong>📅 Fecha:</strong> Jueves 18 de Junio, 13:00 HRS</li>
+                    <li><strong>📍 Ubicación:</strong> Salón "Quinta Real"</li>
+                    <li><strong>🗺️ Dirección:</strong> Av. Adolfo Ruiz Cortines 2221, Obrero Campesina, Xalapa, Ver. (<a href="https://www.google.com/maps/search/?api=1&query=Salón+Quinta+Real,+Av.+Adolfo+Ruiz+Cortines+2221,+Xalapa" style="color: #6366f1;">Ver Mapa</a>)</li>
+                </ul>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <p style="font-size: 14px; color: #64748b; margin-bottom: 10px;">Tu Código QR de Acceso Seguro:</p>
+                <!-- QR Code image will be embedded as cid:qrcode -->
+                <img src="cid:qrcode" alt="Código QR de Acceso" style="width: 200px; height: 200px; border: 4px solid #1e1e2f; border-radius: 8px;">
+                <p style="font-size: 12px; color: #94a3b8; margin-top: 10px;">ID: {{ guest.uuid }}</p>
+            </div>
+            
+        </div>
+        
+        <!-- Footer -->
+        <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0;">
+            <p style="margin: 0; font-size: 12px; color: #94a3b8;">
+                Por favor no compartas este código con nadie. Es único e intransferible.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

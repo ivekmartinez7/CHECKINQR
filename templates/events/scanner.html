@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    .scanner-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2rem;
+    }
+    
+    #reader {
+        width: 100%;
+        max-width: 500px;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 2px solid var(--glass-border);
+        background: #000;
+    }
+    
+    .result-card {
+        display: none;
+        width: 100%;
+        max-width: 500px;
+        text-align: center;
+        animation: fadeIn 0.5s ease;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .result-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+    }
+    
+    .success-icon { color: var(--success); }
+    .error-icon { color: var(--danger); }
+    .warning-icon { color: #f59e0b; }
+    
+    .guest-info {
+        background: rgba(0,0,0,0.2);
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin-top: 1rem;
+    }
+    
+    .guest-name {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+    
+    .guest-details {
+        font-size: 1.1rem;
+        color: var(--text-muted);
+    }
+    
+    .raffle-number {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-top: 0.5rem;
+    }
+
+    #scan-btn {
+        margin-top: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="scanner-container">
+    <div class="glass-panel" style="width: 100%; max-width: 500px; text-align: center;">
+        <h2>Escanear Código QR</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Apunta la cámara al código QR del invitado para registrar su entrada.</p>
+        
+        <div id="reader"></div>
+        <button id="scan-btn" class="btn" style="display: none;" onclick="startScanner()">Escanear Otro</button>
+        
+        <div style="margin-top: 1rem;">
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.5rem;">¿Usas pistola lectora física?</p>
+            <input type="text" id="manual-uuid" placeholder="Haz clic aquí y escanea..." style="width: 100%; text-align: center; border-color: var(--primary);" autofocus autocomplete="off">
+        </div>
+    </div>
+    
+    <div id="result-card" class="glass-panel result-card">
+        <div id="result-icon" class="result-icon"></div>
+        <h2 id="result-title"></h2>
+        <p id="result-message" style="color: var(--text-muted);"></p>
+        
+        <div id="guest-info" class="guest-info" style="display: none;">
+            <div id="guest-name" class="guest-name"></div>
+            <div id="guest-role" class="guest-details"></div>
+            <div id="guest-raffle" class="raffle-number"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<script>
+    let html5QrcodeScanner;
+    const readerElementId = "reader";
+    let isScanning = false;
+    
+    // Web Audio API context
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    function playTone(frequency, type, duration) {
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = type;
+        oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + duration);
+    }
+
+    function playSuccessBeep() {
+        playTone(800, 'sine', 0.1);
+        setTimeout(() => playTone(1200, 'sine', 0.2), 100);
+    }
+
+    function playErrorBeep() {
+        playTone(300, 'sawtooth', 0.3);
+        setTimeout(() => playTone(250, 'sawtooth', 0.4), 300);
+    }
+
+    function onScanSuccess(decodedText, decodedResult) {
+        if (!isScanning) return;
+        isScanning = false;
+        
+        // Pause scanning to process
+        if(html5QrcodeScanner) {
+            html5QrcodeScanner.clear();
+        }
+        
+        document.getElementById('scan-btn').style.display = 'inline-block';
+        
+        // Send to backend
+        fetch('/api/checkin/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'uuid=' + encodeURIComponent(decodedText)
+        })
+        .then(response => response.json())
+        .then(data => {
+            showResult(data);
+        })
+        .catch(error => {
+            showResult({ success: false, message: 'Error de conexión con el servidor.' });
+        });
+    }
+
+    function onScanFailure(error) {
+        // handle scan failure, usually better to ignore and keep scanning
+    }
+
+    // Physical scanner event
+    document.getElementById('manual-uuid').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const uuid = this.value.trim();
+            if (uuid) {
+                // Simulate scan success
+                if (!isScanning) isScanning = true; 
+                onScanSuccess(uuid, null);
+                this.value = ''; // clear input
+            }
+        }
+    });
+
+    function startScanner() {
+        document.getElementById('result-card').style.display = 'none';
+        document.getElementById('scan-btn').style.display = 'none';
+        
+        html5QrcodeScanner = new Html5QrcodeScanner(
+            readerElementId, 
+            { fps: 10, qrbox: {width: 250, height: 250} }, 
+            /* verbose= */ false);
+            
+        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+        isScanning = true;
+    }
+
+    function showResult(data) {
+        const card = document.getElementById('result-card');
+        const icon = document.getElementById('result-icon');
+        const title = document.getElementById('result-title');
+        const msg = document.getElementById('result-message');
+        const info = document.getElementById('guest-info');
+        
+        card.style.display = 'block';
+        info.style.display = 'none';
+        
+        if (data.success) {
+            if (data.already_checked) {
+                icon.innerHTML = '⚠️';
+                icon.className = 'result-icon warning-icon';
+                title.innerText = 'Atención';
+                title.style.color = '#f59e0b';
+                playErrorBeep();
+            } else {
+                icon.innerHTML = '✅';
+                icon.className = 'result-icon success-icon';
+                title.innerText = 'Acceso Concedido';
+                title.style.color = 'var(--success)';
+                playSuccessBeep();
+            }
+            
+            msg.innerText = data.message;
+            
+            if (data.guest) {
+                info.style.display = 'block';
+                document.getElementById('guest-name').innerText = data.guest.name;
+                document.getElementById('guest-role').innerText = data.guest.role;
+                document.getElementById('guest-raffle').innerText = 'Rifa #' + data.guest.raffle_number;
+            }
+        } else {
+            icon.innerHTML = '❌';
+            icon.className = 'result-icon error-icon';
+            title.innerText = 'Acceso Denegado';
+            title.style.color = 'var(--danger)';
+            msg.innerText = data.message;
+            playErrorBeep();
+        }
+    }
+
+    // Auto start scanner on load
+    document.addEventListener("DOMContentLoaded", function() {
+        startScanner();
+    });
+</script>
+{% endblock %}

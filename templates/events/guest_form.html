@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 0 auto;">
+    <div class="glass-panel">
+        <h2>Editar Invitado: {{ guest.name }}</h2>
+        <form method="POST">
+            {% csrf_token %}
+            <label>Nombre Completo</label>
+            <input type="text" name="name" value="{{ guest.name }}" required>
+            
+            <label>Correo Electrónico (Opcional)</label>
+            <input type="email" name="email" value="{{ guest.email|default:'' }}">
+            
+            <label>Teléfono (Opcional)</label>
+            <input type="text" name="phone" value="{{ guest.phone|default:'' }}">
+            
+            <label>Cantidad de Pases</label>
+            <input type="number" name="passes" value="{{ guest.passes }}" min="1" max="10" required>
+            
+            <label>Rol</label>
+            <select name="role">
+                <option value="Docente" {% if guest.role == 'Docente' %}selected{% endif %}>Docente</option>
+                <option value="Acompañante" {% if guest.role == 'Acompañante' %}selected{% endif %}>Acompañante</option>
+            </select>
+            
+            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                <button type="submit" class="btn btn-success" style="flex: 1;">Guardar Cambios</button>
+                <a href="{% url 'dashboard' %}" class="btn" style="flex: 1; text-align: center; background: rgba(255,255,255,0.1);">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

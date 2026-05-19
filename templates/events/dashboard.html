@@ -1,0 +1,242 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 2rem;
+    }
+    
+    .stats-container {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+        flex: 1;
+        text-align: center;
+        padding: 1.5rem;
+    }
+    
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.5rem;
+    }
+    
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+    }
+    
+    th, td {
+        padding: 1rem;
+        text-align: left;
+        border-bottom: 1px solid var(--glass-border);
+    }
+    
+    th {
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+        letter-spacing: 0.5px;
+    }
+    
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    
+    .status-yes { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .status-no { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    
+    .role-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        background: rgba(255,255,255,0.1);
+    }
+    
+    .qr-link {
+        color: #818cf8;
+        text-decoration: none;
+        font-weight: 600;
+    }
+    .qr-link:hover { text-decoration: underline; }
+
+    @media (max-width: 992px) {
+        .dashboard-grid { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if messages %}
+<div style="margin-bottom: 2rem;">
+    {% for message in messages %}
+    <div style="padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; background: {% if message.tags == 'error' %}rgba(239, 68, 68, 0.2){% else %}rgba(16, 185, 129, 0.2){% endif %}; border-left: 4px solid {% if message.tags == 'error' %}#ef4444{% else %}#10b981{% endif %};">
+        {{ message }}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="stats-container">
+    <div class="glass-panel stat-card" style="display: flex; flex-direction: column; justify-content: center;">
+        <div class="stat-value">{{ total }}</div>
+        <div>Total Registrados</div>
+        <div class="stat-value" style="color: var(--success); margin-top: 1rem;">{{ checked_in }}</div>
+        <div>Asistieron</div>
+    </div>
+    <div class="glass-panel stat-card" style="position: relative; min-height: 200px;">
+        <canvas id="attendanceChart"></canvas>
+    </div>
+    <div class="glass-panel stat-card" style="display: flex; flex-direction: column; justify-content: center;">
+        <h3 style="margin-top: 0;">Importación Masiva</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">Sube un archivo .xlsx con: Nombre, Correo, Teléfono, Pases, Rol.</p>
+        <form action="{% url 'import_excel' %}" method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="excel_file" accept=".xlsx, .xls" required style="margin-bottom: 1rem; width: 100%;">
+            <button type="submit" class="btn" style="background: #3b82f6; width: 100%;">📤 Importar y Enviar</button>
+        </form>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="glass-panel">
+        <h2>Registrar Invitado</h2>
+        <form method="POST">
+            {% csrf_token %}
+            <label>Nombre Completo</label>
+            <input type="text" name="name" required placeholder="Ej. Juan Pérez">
+            
+            <label>Correo Electrónico (Opcional)</label>
+            <input type="email" name="email" placeholder="ejemplo@correo.com">
+            
+            <label>Teléfono (Opcional)</label>
+            <input type="text" name="phone" placeholder="Ej. 555-1234">
+            
+            <label>Cantidad de Pases</label>
+            <input type="number" name="passes" value="1" min="1" max="10" required>
+            
+            <label>Rol</label>
+            <select name="role">
+                <option value="Docente">Docente</option>
+                <option value="Acompañante">Acompañante</option>
+            </select>
+            
+            <button type="submit" class="btn" style="width: 100%;">Agregar Invitado</button>
+        </form>
+    </div>
+    
+    <div class="glass-panel table-container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2 style="margin: 0;">Lista de Invitados</h2>
+            <div>
+                <a href="{% url 'export_excel' %}" class="btn" style="background: #10b981; padding: 0.5rem 1rem; font-size: 0.9rem;">📊 Excel</a>
+                <a href="{% url 'export_pdf' %}" class="btn" style="background: #ef4444; padding: 0.5rem 1rem; font-size: 0.9rem; margin-left: 0.5rem;">📄 PDF</a>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Teléfono</th>
+                    <th>Pases</th>
+                    <th>Rol</th>
+                    <th># Rifa</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for guest in guests %}
+                <tr>
+                    <td>
+                        {{ guest.name }}<br>
+                        <small style="color: var(--text-muted);">{{ guest.email|default:'' }}</small>
+                    </td>
+                    <td>
+                        {{ guest.phone|default:'-' }}<br>
+                        {% if guest.phone %}
+                        <a href="https://wa.me/{{ guest.phone }}?text=Hola%20{{ guest.name|urlencode }},%20tu%20registro%20está%20confirmado.%20Pases:%20{{ guest.passes }}.%20Sorteo:%20%23{{ guest.raffle_number }}.%20Día:%20Jueves%2018%20Junio,%2013:00hrs.%20Lugar:%20Salón%20Quinta%20Real.%20Dirección:%20Av.%20Adolfo%20Ruiz%20Cortines%202221.%20Aquí%20está%20tu%20código%20QR%20para%20entrar:%20https://checkinparty.systemsivek.win/qr/{{ guest.uuid }}.png" target="_blank" style="color: #25D366; text-decoration: none; font-size: 0.8rem;">💬 WhatsApp</a>
+                        {% endif %}
+                    </td>
+                    <td>{{ guest.passes }}</td>
+                    <td><span class="role-badge">{{ guest.role }}</span></td>
+                    <td><strong>#{{ guest.raffle_number }}</strong></td>
+                    <td>
+                        {% if guest.is_checked_in %}
+                            <span class="status-badge status-yes">Asistió</span>
+                        {% else %}
+                            <span class="status-badge status-no">Pendiente</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{% url 'qr_code_image' guest.uuid %}" target="_blank" class="qr-link" title="Ver QR">QR</a> |
+                        {% if guest.email %}
+                        <a href="{% url 'resend_email' guest.pk %}" style="text-decoration: none;" title="Reenviar Correo">📧</a> |
+                        {% endif %}
+                        <a href="{% url 'edit_guest' guest.pk %}" style="color: var(--text-muted); text-decoration: none;" title="Editar">✏️</a> |
+                        <a href="{% url 'delete_guest' guest.pk %}" style="color: var(--danger); text-decoration: none;" onclick="return confirm('¿Seguro que deseas eliminar a este invitado?');" title="Eliminar">🗑️</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                        No hay invitados registrados aún.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const ctx = document.getElementById('attendanceChart').getContext('2d');
+        const total = {{ total }};
+        const checkedIn = {{ checked_in }};
+        const pending = total - checkedIn;
+        
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Asistieron', 'Pendientes'],
+                datasets: [{
+                    data: [checkedIn, pending],
+                    backgroundColor: ['#34d399', '#f87171'],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: '#94a3b8' }
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}
+{% endblock %}
