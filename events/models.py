@@ -15,6 +15,7 @@ class Guest(models.Model):
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="Teléfono")
     passes = models.IntegerField(default=1, verbose_name="Cantidad de Pases")
     role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='Docente', verbose_name="Rol")
+    school = models.CharField(max_length=255, blank=True, null=True, verbose_name="Escuela/Servicio")
     raffle_number = models.IntegerField(unique=True, blank=True, null=True, verbose_name="Número de Rifa")
     
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)

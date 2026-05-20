@@ -76,9 +76,10 @@ def dashboard(request):
         phone = request.POST.get('phone')
         passes = request.POST.get('passes', 1)
         role = request.POST.get('role', 'Docente')
+        school = request.POST.get('school')
         
         try:
-            guest = Guest(name=name, email=email, phone=phone, passes=int(passes), role=role)
+            guest = Guest(name=name, email=email, phone=phone, passes=int(passes), role=role, school=school)
             guest.save()
             
             if guest.email:
@@ -114,6 +115,7 @@ def edit_guest(request, pk):
         guest.phone = request.POST.get('phone')
         guest.passes = int(request.POST.get('passes', 1))
         guest.role = request.POST.get('role')
+        guest.school = request.POST.get('school')
         guest.save()
         
         # Si el correo cambió y no está vacío, reenviar confirmación automáticamente
@@ -215,7 +217,7 @@ def export_excel(request):
     ws.title = 'Invitados'
     
     # Headers
-    headers = ['Nombre', 'Correo', 'Teléfono', 'Rol', 'No. Rifa', 'Asistió', 'Fecha Registro']
+    headers = ['Nombre', 'Correo', 'Teléfono', 'Rol', 'Escuela/Servicio', 'No. Rifa', 'Asistió', 'Fecha Registro']
     ws.append(headers)
     
     # Data
@@ -228,6 +230,7 @@ def export_excel(request):
             guest.email or '', 
             guest.phone or '', 
             guest.role, 
+            guest.school or '',
             guest.raffle_number, 
             status, 
             date_str
@@ -313,8 +316,9 @@ def import_excel(request):
                     passes = 1
                     
                 role = str(row[4]) if row[4] else 'Docente'
+                school = str(row[5]) if len(row) > 5 and row[5] else ''
                 
-                guest = Guest(name=name, email=email, phone=phone, passes=passes, role=role)
+                guest = Guest(name=name, email=email, phone=phone, passes=passes, role=role, school=school)
                 try:
                     guest.save()
                     imported_count += 1

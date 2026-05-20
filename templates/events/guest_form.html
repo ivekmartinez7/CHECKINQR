@@ -25,6 +25,9 @@
                 <option value="Acompañante" {% if guest.role == 'Acompañante' %}selected{% endif %}>Acompañante</option>
             </select>
             
+            <label>Escuela / Servicio (Opcional)</label>
+            <input type="text" name="school" value="{{ guest.school|default:'' }}" placeholder="Ej. Primaria Rébsamen">
+            
             <div style="display: flex; gap: 1rem; margin-top: 1rem;">
                 <button type="submit" class="btn btn-success" style="flex: 1;">Guardar Cambios</button>
                 <a href="{% url 'dashboard' %}" class="btn" style="flex: 1; text-align: center; background: rgba(255,255,255,0.1);">Cancelar</a>

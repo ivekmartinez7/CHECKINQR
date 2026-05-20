@@ -222,6 +222,9 @@
             <!-- Body -->
             <div class="ticket-body">
                 <h2 class="guest-name">{{ guest.name }}</h2>
+                {% if guest.school %}
+                    <p style="margin: -0.25rem 0 1rem 0; color: var(--text-muted); font-size: 1.1rem; font-weight: 500;">🏫 {{ guest.school }}</p>
+                {% endif %}
                 
                 <div class="badge-container">
                     <span class="badge badge-role">{{ guest.role }}</span>
