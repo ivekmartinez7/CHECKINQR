@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: checkinqr_db
+    restart: always
+    environment:
+      POSTGRES_DB: checkindb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-supersecretpassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  web:
+    build: .
+    container_name: checkinqr_web
+    restart: always
+    command: /app/entrypoint.sh
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_ENGINE=postgresql
+      - DB_NAME=checkindb
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD:-supersecretpassword}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:

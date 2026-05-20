@@ -25,3 +25,7 @@ venv.bak/
 
 # macOS
 .DS_Store
+
+# Docker and Backups
+datadump.json
+.data_loaded
