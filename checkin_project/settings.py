@@ -23,12 +23,12 @@ load_dotenv(BASE_DIR / '.env')
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-u=4(%f@os3%%-w8(o=ls_v**+c!dccxva)(n9yrtoa7jy4ex*b'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-u=4(%f@os3%%-w8(o=ls_v**+c!dccxva)(n9yrtoa7jy4ex*b')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 't')
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'checkinparty.systemsivek.win', 'checkinqr_web']
 CSRF_TRUSTED_ORIGINS = ['https://*.trycloudflare.com', 'https://*.systemsivek.win']
 
 # Email Configuration
