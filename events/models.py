@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 class Guest(models.Model):
     ROLE_CHOICES = [
         ('Docente', 'Docente'),
+        ('Jubilada', 'Jubilada'),
         ('Acompañante', 'Acompañante'),
     ]
 

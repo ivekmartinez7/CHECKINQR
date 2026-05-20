@@ -21,6 +21,7 @@
             <label>Rol</label>
             <select name="role">
                 <option value="Docente" {% if guest.role == 'Docente' %}selected{% endif %}>Docente</option>
+                <option value="Jubilada" {% if guest.role == 'Jubilada' %}selected{% endif %}>Jubilada</option>
                 <option value="Acompañante" {% if guest.role == 'Acompañante' %}selected{% endif %}>Acompañante</option>
             </select>
             
