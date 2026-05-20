@@ -108,12 +108,19 @@ def edit_guest(request, pk):
         return redirect('scanner')
     guest = get_object_or_404(Guest, pk=pk)
     if request.method == 'POST':
+        old_email = guest.email
         guest.name = request.POST.get('name')
         guest.email = request.POST.get('email')
         guest.phone = request.POST.get('phone')
         guest.passes = int(request.POST.get('passes', 1))
         guest.role = request.POST.get('role')
         guest.save()
+        
+        # Si el correo cambió y no está vacío, reenviar confirmación automáticamente
+        if guest.email and guest.email != old_email:
+            send_guest_email(guest)
+            messages.success(request, f"Se actualizó el correo y se envió la confirmación a {guest.email}.")
+            
         return redirect('dashboard')
         
     return render(request, 'events/guest_form.html', {'guest': guest})
