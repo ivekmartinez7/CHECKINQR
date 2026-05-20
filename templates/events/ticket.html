@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boleto Digital - {{ guest.name }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #090d16 0%, #111827 100%);
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #d4af37; /* Gold accent for premium look */
+            --accent-hover: #b89020;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-sizing: border-box;
+        }
+
+        .ticket-wrapper {
+            width: 100%;
+            max-width: 450px;
+            padding: 1.5rem;
+            box-sizing: border-box;
+        }
+
+        .ticket-card {
+            background: rgba(30, 41, 59, 0.4);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            position: relative;
+            text-align: center;
+        }
+
+        /* Decorative ticket notches */
+        .ticket-card::before, .ticket-card::after {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: #090d16;
+            border-radius: 50%;
+            top: 60%;
+            transform: translateY(-50%);
+            z-index: 2;
+        }
+        .ticket-card::before { left: -12px; }
+        .ticket-card::after { right: -12px; }
+
+        .ticket-header {
+            background: linear-gradient(to bottom, rgba(212, 175, 55, 0.15), transparent);
+            padding: 2.5rem 1.5rem 1.5rem 1.5rem;
+            border-bottom: 1px dashed var(--glass-border);
+        }
+
+        .event-title {
+            font-size: 1.6rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--text-main);
+            margin: 0 0 0.5rem 0;
+        }
+
+        .event-subtitle {
+            font-size: 0.9rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .ticket-body {
+            padding: 2rem 1.5rem;
+        }
+
+        .guest-name {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 0 0 0.5rem 0;
+            color: var(--text-main);
+        }
+
+        .badge-container {
+            display: inline-block;
+            margin-bottom: 1.5rem;
+        }
+
+        .badge {
+            padding: 0.4rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-role {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+            margin-right: 0.5rem;
+        }
+
+        .badge-status-valid {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-status-used {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .qr-box {
+            background: white;
+            padding: 1rem;
+            border-radius: 16px;
+            display: inline-block;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+
+        .qr-image {
+            width: 200px;
+            height: 200px;
+            display: block;
+        }
+
+        .passes-count {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            margin: 0 0 1.5rem 0;
+        }
+
+        .passes-number {
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 1.3rem;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            border-top: 1px solid var(--glass-border);
+            padding-top: 1.5rem;
+            text-align: left;
+        }
+
+        .detail-item-title {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.25rem;
+        }
+
+        .detail-item-value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .status-alert-box {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+
+        .status-alert-valid {
+            background: rgba(16, 185, 129, 0.1);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .status-alert-used {
+            background: rgba(239, 68, 68, 0.1);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .logo-footer {
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="ticket-wrapper">
+        <div class="ticket-card">
+            <!-- Header -->
+            <div class="ticket-header">
+                <p class="event-subtitle">Invitación Oficial</p>
+                <h1 class="event-title">Día del Maestro</h1>
+            </div>
+
+            <!-- Body -->
+            <div class="ticket-body">
+                <h2 class="guest-name">{{ guest.name }}</h2>
+                
+                <div class="badge-container">
+                    <span class="badge badge-role">{{ guest.role }}</span>
+                    {% if guest.is_checked_in %}
+                        <span class="badge badge-status-used">No Válido / Usado</span>
+                    {% else %}
+                        <span class="badge badge-status-valid">Válido</span>
+                    {% endif %}
+                </div>
+
+                <br>
+
+                <!-- QR Code Box -->
+                <div class="qr-box">
+                    <img class="qr-image" src="{% url 'qr_code_image' guest.uuid %}" alt="Código QR de Acceso">
+                </div>
+
+                <p class="passes-count">Pases válidos para: <span class="passes-number">{{ guest.passes }}</span> persona(s)</p>
+
+                <!-- Info Grid -->
+                <div class="details-grid">
+                    <div>
+                        <div class="detail-item-title">📍 Lugar</div>
+                        <div class="detail-item-value">Salón "Quinta Real"</div>
+                    </div>
+                    <div>
+                        <div class="detail-item-title">📅 Fecha y Hora</div>
+                        <div class="detail-item-value">18 de Junio, 13:00 Hrs</div>
+                    </div>
+                    <div style="grid-column: span 2;">
+                        <div class="detail-item-title">🗺️ Dirección</div>
+                        <div class="detail-item-value" style="font-size: 0.85rem;">Av. Adolfo Ruiz Cortines 2221, Xalapa, Ver.</div>
+                    </div>
+                </div>
+
+                <!-- Anti-clone security warning -->
+                {% if guest.is_checked_in %}
+                    <div class="status-alert-box status-alert-used">
+                        <strong>⚠️ BOLETO YA UTILIZADO EN LA PUERTA</strong><br>
+                        Este boleto ya fue escaneado para ingresar. Si necesitas asistencia, dirígete a la mesa de control del evento.
+                    </div>
+                {% else %}
+                    <div class="status-alert-box status-alert-valid">
+                        <strong>✓ BOLETO ÚNICO E INTRANSFERIBLE</strong><br>
+                        Presenta este código QR en la entrada para registrar tu asistencia.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="logo-footer">
+            Sistemas Ivek • CHECKINQR
+        </div>
+    </div>
+</body>
+</html>

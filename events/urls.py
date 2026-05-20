@@ -12,4 +12,5 @@ urlpatterns = [
     path('scanner/', views.scanner, name='scanner'),
     path('api/checkin/', views.api_check_in, name='api_check_in'),
     path('qr/<uuid:uuid>.png', views.qr_code_image, name='qr_code_image'),
+    path('ticket/<uuid:uuid>/', views.guest_ticket, name='guest_ticket'),
 ]

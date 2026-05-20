@@ -172,7 +172,7 @@
                     <td>
                         {{ guest.phone|default:'-' }}<br>
                         {% if guest.phone %}
-                        <a href="https://wa.me/{{ guest.phone }}?text=Hola%20{{ guest.name|urlencode }},%20tu%20registro%20está%20confirmado.%20Pases:%20{{ guest.passes }}.%20Sorteo:%20%23{{ guest.raffle_number }}.%20Día:%20Jueves%2018%20Junio,%2013:00hrs.%20Lugar:%20Salón%20Quinta%20Real.%20Dirección:%20Av.%20Adolfo%20Ruiz%20Cortines%202221.%20Aquí%20está%20tu%20código%20QR%20para%20entrar:%20https://checkinparty.systemsivek.win/qr/{{ guest.uuid }}.png" target="_blank" style="color: #25D366; text-decoration: none; font-size: 0.8rem;">💬 WhatsApp</a>
+                        <a href="https://wa.me/{{ guest.phone }}?text=Hola%20{{ guest.name|urlencode }},%20tu%20registro%20está%20confirmado.%20Pases:%20{{ guest.passes }}.%20Sorteo:%20%23{{ guest.raffle_number }}.%20Día:%20Jueves%2018%20Junio,%2013:00hrs.%20Lugar:%20Salón%20Quinta%20Real.%20Dirección:%20Av.%20Adolfo%20Ruiz%20Cortines%202221.%20Aquí%20está%20tu%20boleto%20digital%20y%20código%20QR%20para%20entrar:%20https://checkinparty.systemsivek.win/ticket/{{ guest.uuid }}/" target="_blank" style="color: #25D366; text-decoration: none; font-size: 0.8rem;">💬 WhatsApp</a>
                         {% endif %}
                     </td>
                     <td>{{ guest.passes }}</td>

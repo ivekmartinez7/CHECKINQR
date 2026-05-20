@@ -133,7 +133,6 @@ def delete_guest(request, pk):
     guest.delete()
     return redirect('dashboard')
 
-@login_required
 def qr_code_image(request, uuid):
     guest = get_object_or_404(Guest, uuid=uuid)
     
@@ -151,6 +150,10 @@ def qr_code_image(request, uuid):
     buffer = BytesIO()
     img.save(buffer, format="PNG")
     return HttpResponse(buffer.getvalue(), content_type="image/png")
+
+def guest_ticket(request, uuid):
+    guest = get_object_or_404(Guest, uuid=uuid)
+    return render(request, 'events/ticket.html', {'guest': guest})
 
 @login_required
 def scanner(request):

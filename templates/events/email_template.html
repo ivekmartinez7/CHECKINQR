@@ -37,6 +37,9 @@
                 <!-- QR Code image will be embedded as cid:qrcode -->
                 <img src="cid:qrcode" alt="Código QR de Acceso" style="width: 200px; height: 200px; border: 4px solid #1e1e2f; border-radius: 8px;">
                 <p style="font-size: 12px; color: #94a3b8; margin-top: 10px;">ID: {{ guest.uuid }}</p>
+                <div style="margin-top: 20px;">
+                    <a href="https://checkinparty.systemsivek.win/ticket/{{ guest.uuid }}/" style="background-color: #d4af37; color: #1e1e2f; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 6px; display: inline-block;">Ver Boleto Digital</a>
+                </div>
             </div>
             
         </div>
