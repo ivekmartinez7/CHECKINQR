@@ -148,14 +148,29 @@
         
         document.getElementById('scan-btn').style.display = 'inline-block';
         
-        // Send to backend
-        fetch('/api/checkin/', {
+        // Determine if it is a dynamic URL or a static UUID
+        let url = '/api/checkin/';
+        let options = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest'
             },
             body: 'uuid=' + encodeURIComponent(decodedText)
-        })
+        };
+        
+        if (decodedText.includes('/api/checkin-dynamic/')) {
+            url = decodedText;
+            options = {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            };
+        }
+        
+        // Send to backend
+        fetch(url, options)
         .then(response => response.json())
         .then(data => {
             showResult(data);
@@ -244,4 +259,6 @@
         startScanner();
     });
 </script>
+
+{% include 'events/chat_panel.html' %}
 {% endblock %}

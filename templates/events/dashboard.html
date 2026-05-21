@@ -6,18 +6,24 @@
         display: grid;
         grid-template-columns: 1fr 2fr;
         gap: 2rem;
+        align-items: start; /* Prevents the left form card from stretching vertically */
+    }
+    
+    .dashboard-grid.full-width-grid {
+        grid-template-columns: 1fr;
     }
     
     .stats-container {
-        display: flex;
-        gap: 1rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
         margin-bottom: 2rem;
     }
     
     .stat-card {
-        flex: 1;
         text-align: center;
         padding: 1.5rem;
+        box-sizing: border-box;
     }
     
     .stat-value {
@@ -76,7 +82,15 @@
     .qr-link:hover { text-decoration: underline; }
 
     @media (max-width: 992px) {
-        .dashboard-grid { grid-template-columns: 1fr; }
+        .dashboard-grid { 
+            grid-template-columns: 1fr; 
+        }
+    }
+    
+    @media (max-width: 768px) {
+        .stats-container {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 {% endblock %}
@@ -103,6 +117,7 @@
     <div class="glass-panel stat-card" style="position: relative; min-height: 200px;">
         <canvas id="attendanceChart"></canvas>
     </div>
+    {% if request.user.is_superuser %}
     <div class="glass-panel stat-card" style="display: flex; flex-direction: column; justify-content: center;">
         <h3 style="margin-top: 0;">Importación Masiva</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted);">Sube un archivo .xlsx con: Nombre, Correo, Teléfono, Pases, Rol, Escuela/Servicio.</p>
@@ -112,9 +127,11 @@
             <button type="submit" class="btn" style="background: #3b82f6; width: 100%;">📤 Importar y Enviar</button>
         </form>
     </div>
+    {% endif %}
 </div>
 
-<div class="dashboard-grid">
+<div class="dashboard-grid {% if not request.user.is_superuser %}full-width-grid{% endif %}">
+    {% if request.user.is_superuser %}
     <div class="glass-panel">
         <h2>Registrar Invitado</h2>
         <form method="POST">
@@ -132,10 +149,10 @@
             <input type="number" name="passes" value="1" min="1" max="10" required>
             
             <label>Rol</label>
-            <select name="role">
-                <option value="Docente">Docente</option>
-                <option value="Jubilada">Jubilada</option>
-                <option value="Acompañante">Acompañante</option>
+            <select name="role" required>
+                {% for r in roles %}
+                    <option value="{{ r.name }}">{{ r.name }}</option>
+                {% endfor %}
             </select>
 
             <label>Escuela / Servicio (Opcional)</label>
@@ -144,13 +161,21 @@
             <button type="submit" class="btn" style="width: 100%;">Agregar Invitado</button>
         </form>
     </div>
+    {% endif %}
     
     <div class="glass-panel table-container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
             <h2 style="margin: 0;">Lista de Invitados</h2>
-            <div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                {% if request.user.is_superuser %}
+                <a href="{% url 'raffle' %}" class="btn" style="background: linear-gradient(135deg, var(--accent) 0%, #d97706 100%); color: #1e1b4b; padding: 0.5rem 1rem; font-size: 0.9rem; font-weight: 700;">✨ Sorteo</a>
+                <a href="{% url 'manage_roles' %}" class="btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 0.5rem 1rem; font-size: 0.9rem;">⚙️ Roles</a>
+                <a href="{% url 'manage_staff' %}" class="btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 0.5rem 1rem; font-size: 0.9rem;">👥 Staff / Conectar</a>
                 <a href="{% url 'export_excel' %}" class="btn" style="background: #10b981; padding: 0.5rem 1rem; font-size: 0.9rem;">📊 Excel</a>
-                <a href="{% url 'export_pdf' %}" class="btn" style="background: #ef4444; padding: 0.5rem 1rem; font-size: 0.9rem; margin-left: 0.5rem;">📄 PDF</a>
+                <a href="{% url 'export_pdf' %}" class="btn" style="background: #ef4444; padding: 0.5rem 1rem; font-size: 0.9rem;">📄 PDF</a>
+                {% else %}
+                <span class="permission-badge perm-scanner" style="padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">Vista de Solo Lectura</span>
+                {% endif %}
             </div>
         </div>
         <table>
@@ -180,7 +205,7 @@
                     </td>
                     <td>{{ guest.passes }}</td>
                     <td>
-                        <span class="role-badge">{{ guest.role }}</span>
+                        <span class="role-badge">{{ guest.role.name|default:"Sin Rol" }}</span>
                         {% if guest.school %}
                         <br><small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">{{ guest.school }}</small>
                         {% endif %}
@@ -194,12 +219,16 @@
                         {% endif %}
                     </td>
                     <td>
+                        {% if request.user.is_superuser %}
                         <a href="{% url 'qr_code_image' guest.uuid %}" target="_blank" class="qr-link" title="Ver QR">QR</a> |
                         {% if guest.email %}
                         <a href="{% url 'resend_email' guest.pk %}" style="text-decoration: none;" title="Reenviar Correo">📧</a> |
                         {% endif %}
                         <a href="{% url 'edit_guest' guest.pk %}" style="color: var(--text-muted); text-decoration: none;" title="Editar">✏️</a> |
                         <a href="{% url 'delete_guest' guest.pk %}" style="color: var(--danger); text-decoration: none;" onclick="return confirm('¿Seguro que deseas eliminar a este invitado?');" title="Eliminar">🗑️</a>
+                        {% else %}
+                        <a href="{% url 'qr_code_image' guest.uuid %}" target="_blank" class="qr-link" title="Ver QR">QR</a>
+                        {% endif %}
                     </td>
                 </tr>
                 {% empty %}
@@ -247,5 +276,6 @@
         });
     });
 </script>
+{% include 'events/chat_panel.html' %}
 {% endblock %}
 {% endblock %}

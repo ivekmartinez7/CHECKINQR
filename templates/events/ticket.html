@@ -227,7 +227,7 @@
                 {% endif %}
                 
                 <div class="badge-container">
-                    <span class="badge badge-role">{{ guest.role }}</span>
+                    <span class="badge badge-role">{{ guest.role.name|default:"Sin Rol" }}</span>
                     {% if guest.is_checked_in %}
                         <span class="badge badge-status-used">No Válido / Usado</span>
                     {% else %}
@@ -238,8 +238,12 @@
                 <br>
 
                 <!-- QR Code Box -->
-                <div class="qr-box">
-                    <img class="qr-image" src="{% url 'qr_code_image' guest.uuid %}" alt="Código QR de Acceso">
+                <div class="qr-box" style="position: relative;">
+                    <img id="qr-code" class="qr-image" src="{% url 'qr_code_image' guest.uuid %}" alt="Código QR de Acceso">
+                    <div id="refresh-bar-container" style="width: 100%; height: 4px; background: rgba(0,0,0,0.1); border-radius: 2px; margin-top: 8px; overflow: hidden; position: relative;">
+                        <div id="refresh-bar" style="width: 100%; height: 100%; background: var(--accent); transition: width 0.1s linear;"></div>
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; font-weight: 500;">El QR se actualiza cada 10 segundos</div>
                 </div>
 
                 <p class="passes-count">Pases válidos para: <span class="passes-number">{{ guest.passes }}</span> persona(s)</p>
@@ -279,5 +283,28 @@
             Sistemas Ivek • CHECKINQR
         </div>
     </div>
+
+    <script>
+        const qrImage = document.getElementById('qr-code');
+        const refreshBar = document.getElementById('refresh-bar');
+        const qrBaseUrl = "{% url 'qr_code_image' guest.uuid %}";
+        
+        let secondsLeft = 10;
+        
+        function refreshQR() {
+            qrImage.src = qrBaseUrl + "?t=" + new Date().getTime();
+            secondsLeft = 10;
+        }
+        
+        setInterval(() => {
+            secondsLeft -= 0.1;
+            if (secondsLeft <= 0) {
+                refreshQR();
+            } else {
+                const percentage = (secondsLeft / 10) * 100;
+                refreshBar.style.width = percentage + "%";
+            }
+        }, 100);
+    </script>
 </body>
 </html>

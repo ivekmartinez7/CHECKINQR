@@ -150,8 +150,11 @@
     <header>
         <a href="{% url 'dashboard' %}" class="logo">Event Check-In</a>
         <nav class="nav-links">
-            {% if user.is_authenticated and user.is_superuser %}
+            {% if user.is_authenticated %}
             <a href="{% url 'dashboard' %}">Dashboard</a>
+            {% endif %}
+            {% if user.is_authenticated and user.is_superuser %}
+            <a href="{% url 'manage_staff' %}">Staff / Conectar</a>
             {% endif %}
             <a href="{% url 'scanner' %}" class="btn">Escanear QR</a>
             {% if user.is_authenticated %}

@@ -19,10 +19,10 @@
             <input type="number" name="passes" value="{{ guest.passes }}" min="1" max="10" required>
             
             <label>Rol</label>
-            <select name="role">
-                <option value="Docente" {% if guest.role == 'Docente' %}selected{% endif %}>Docente</option>
-                <option value="Jubilada" {% if guest.role == 'Jubilada' %}selected{% endif %}>Jubilada</option>
-                <option value="Acompañante" {% if guest.role == 'Acompañante' %}selected{% endif %}>Acompañante</option>
+            <select name="role" required>
+                {% for r in roles %}
+                    <option value="{{ r.name }}" {% if guest.role.id == r.id %}selected{% endif %}>{{ r.name }}</option>
+                {% endfor %}
             </select>
             
             <label>Escuela / Servicio (Opcional)</label>

@@ -1,0 +1,307 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    .staff-grid {
+        display: grid;
+        grid-template-columns: 1fr 1.2fr;
+        gap: 2rem;
+        align-items: start;
+    }
+    
+    .connection-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .ip-badge-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .ip-badge {
+        background: rgba(99, 102, 241, 0.15);
+        color: #a5b4fc;
+        padding: 0.4rem 0.8rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .ip-badge.active {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+        box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+    }
+
+    .qr-container {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        display: inline-block;
+        margin: 0 auto;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        text-align: center;
+        width: fit-content;
+    }
+
+    .qr-container img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+    }
+
+    .steps-container {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .step-card {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid var(--glass-border);
+        border-radius: 10px;
+        padding: 1rem;
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+
+    .step-number {
+        background: var(--accent);
+        color: white;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+
+    .step-text {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+    }
+    
+    .step-text strong {
+        color: var(--text-main);
+    }
+
+    .permission-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    
+    .perm-admin {
+        background: rgba(245, 158, 11, 0.2);
+        color: #f59e0b;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .perm-scanner {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    @media (max-width: 992px) {
+        .staff-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if messages %}
+<div style="margin-bottom: 2rem;">
+    {% for message in messages %}
+    <div style="padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; background: {% if message.tags == 'error' %}rgba(239, 68, 68, 0.2){% else %}rgba(16, 185, 129, 0.2){% endif %}; border-left: 4px solid {% if message.tags == 'error' %}#ef4444{% else %}#10b981{% endif %};">
+        {{ message }}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'dashboard' %}" style="color: var(--text-muted); text-decoration: none; font-weight: 600;">← Volver al Dashboard</a>
+</div>
+
+<div class="staff-grid">
+    <div class="glass-panel connection-panel">
+        <h2>Conectar otros Dispositivos</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1rem;">Todos los dispositivos deben estar en la misma red Wi-Fi o conectados al Hotspot de este equipo. La conexión es <strong style="color: #34d399;">HTTPS (cifrada)</strong>.</p>
+
+        <div class="steps-container">
+            <div class="step-card">
+                <div class="step-number">1</div>
+                <div class="step-text">
+                    <strong>Conecta todos los dispositivos a la misma red Wi-Fi</strong> o comparte Internet vía Hotspot desde este equipo principal.
+                </div>
+            </div>
+            <div class="step-card">
+                <div class="step-number">2</div>
+                <div class="step-text">
+                    <strong>Selecciona tu IP de Wi-Fi local abajo</strong> y escanea el código QR desde el otro dispositivo.
+                </div>
+            </div>
+        </div>
+
+        <label style="font-weight: 600; display: block; margin-top: 1.5rem;">IPs Locales Detectadas:</label>
+        <div class="ip-badge-container">
+            {% for ip in ips %}
+            <span class="ip-badge {% if forloop.first %}active{% endif %}" onclick="changeLocalIP('{{ ip }}', this)">
+                {{ ip }}
+            </span>
+            {% endfor %}
+        </div>
+
+        <div style="text-align: center; margin-top: 0.5rem;">
+            <p style="margin-bottom: 1rem; font-size: 0.95rem; color: var(--text-main);">
+                URL para otros dispositivos:<br>
+                <strong id="local-url-text" style="color: var(--accent); font-size: 1.15rem;">https://{{ ips.0 }}/</strong>
+            </p>
+            <div class="qr-container">
+                <img id="local-qr-img" src="{% url 'connection_qr' %}?ip={{ ips.0 }}&protocol=https" alt="QR Conexión HTTPS">
+                <div style="font-size: 0.75rem; color: #1e293b; margin-top: 0.5rem; font-weight: 600;">Escanea para abrir la app</div>
+            </div>
+        </div>
+
+        <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--glass-border); display: flex; flex-direction: column; gap: 0.5rem;">
+            <label style="font-weight: 600; color: #a5b4fc;">¿Ninguna IP funciona? Escríbela manualmente:</label>
+            <div style="display: flex; gap: 0.5rem;">
+                <input type="text" id="custom-ip-input" placeholder="Ej: 192.168.1.15" style="margin-bottom: 0; flex: 1;">
+                <button type="button" class="btn" style="padding: 0.5rem 1rem;" onclick="applyCustomIP()">Aplicar</button>
+            </div>
+            <small style="color: var(--text-muted); font-size: 0.8rem; line-height: 1.3;">
+                ⚠️ <strong>Nota Docker:</strong> Las IPs <strong>172.x.x.x</strong> son internas del contenedor. Usa tu IP Wi-Fi real.<br>
+                <strong>Windows:</strong> Ejecuta <code>ipconfig</code> → busca "Dirección IPv4" de Wi-Fi.<br>
+                <strong>Android:</strong> Ajustes → Acerca del teléfono → Estado → Dirección IP.<br><br>
+                💡 Al abrir la URL, el navegador mostrará una advertencia de certificado. Selecciona <strong>"Avanzado"</strong> → <strong>"Continuar de todas formas"</strong>. Es normal con certificados autofirmados.
+            </small>
+        </div>
+
+        <div class="step-card" style="margin-top: 1rem;">
+            <div class="step-number">3</div>
+            <div class="step-text">
+                <strong>Inicia sesión con cuentas del personal:</strong> Una vez conectados, los operadores deben iniciar sesión con las credenciales que configures a la derecha.
+            </div>
+        </div>
+    </div>
+
+    <!-- Right panel: Manage users and permissions -->
+    <div style="display: flex; flex-direction: column; gap: 2rem;">
+        <!-- Register Staff form -->
+        <div class="glass-panel">
+            <h2>Registrar Personal de Staff</h2>
+            <form method="POST">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create_staff">
+                
+                <label>Nombre de Usuario</label>
+                <input type="text" name="username" required placeholder="Ej. scanner_puerta_1" autocomplete="off">
+                
+                <label>Contraseña</label>
+                <input type="password" name="password" required placeholder="Crea una contraseña segura" autocomplete="off">
+                
+                <label>Nivel de Permisos</label>
+                <select name="is_admin" required>
+                    <option value="0" selected>Lector (Solo Escáner / Lectura)</option>
+                    <option value="1">Administrador (CRUD Completo)</option>
+                </select>
+                
+                <button type="submit" class="btn" style="width: 100%; margin-top: 0.5rem;">Crear Cuenta de Staff</button>
+            </form>
+        </div>
+
+        <!-- Staff List table -->
+        <div class="glass-panel" style="overflow-x: auto;">
+            <h2>Personal Registrado</h2>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--glass-border);">
+                        <th style="padding: 0.75rem; text-align: left; color: var(--text-muted); font-size: 0.85rem;">Usuario</th>
+                        <th style="padding: 0.75rem; text-align: left; color: var(--text-muted); font-size: 0.85rem;">Permisos</th>
+                        <th style="padding: 0.75rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom: 1px solid var(--glass-border);">
+                        <td style="padding: 0.75rem;">
+                            {{ request.user.username }} <small style="color: var(--success); font-weight: bold;">(Tú)</small>
+                        </td>
+                        <td style="padding: 0.75rem;">
+                            <span class="permission-badge perm-admin">Administrador (Full CRUD)</span>
+                        </td>
+                        <td style="padding: 0.75rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+                            -
+                        </td>
+                    </tr>
+                    {% for staff in staff_users %}
+                    <tr style="border-bottom: 1px solid var(--glass-border);">
+                        <td style="padding: 0.75rem;">{{ staff.username }}</td>
+                        <td style="padding: 0.75rem;">
+                            {% if staff.is_superuser %}
+                            <span class="permission-badge perm-admin">Administrador (Full CRUD)</span>
+                            {% else %}
+                            <span class="permission-badge perm-scanner">Lector (Solo Escáner)</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.75rem; text-align: center;">
+                            <a href="{% url 'delete_staff' staff.pk %}" style="color: var(--danger); text-decoration: none;" onclick="return confirm('¿Seguro que deseas eliminar el usuario del staff {{ staff.username }}?');">🗑️ Borrar</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const savedIP = localStorage.getItem('custom_server_ip');
+        if (savedIP) {
+            document.getElementById('custom-ip-input').value = savedIP;
+            updateDisplay(savedIP);
+        }
+    });
+
+    function changeLocalIP(ip, badgeEl) {
+        document.getElementById('custom-ip-input').value = '';
+        document.querySelectorAll('.ip-badge').forEach(b => b.classList.remove('active'));
+        badgeEl.classList.add('active');
+        updateDisplay(ip);
+    }
+
+    function applyCustomIP() {
+        const val = document.getElementById('custom-ip-input').value.trim();
+        if (!val) return;
+        localStorage.setItem('custom_server_ip', val);
+        document.querySelectorAll('.ip-badge').forEach(b => b.classList.remove('active'));
+        updateDisplay(val);
+    }
+
+    function updateDisplay(ip) {
+        const connectionUrl = `https://${ip}/`;
+        document.getElementById('local-url-text').innerText = connectionUrl;
+        document.getElementById('local-qr-img').src = `{% url 'connection_qr' %}?ip=${encodeURIComponent(ip)}&protocol=https`;
+    }
+</script>
+{% endblock %}

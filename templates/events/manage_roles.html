@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    .roles-container {
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    .role-list {
+        margin-top: 2rem;
+    }
+    .role-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        margin-bottom: 0.75rem;
+    }
+    .role-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    .role-badge {
+        background: var(--primary);
+        color: white;
+        padding: 0.2rem 0.6rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+    }
+    .btn-delete-role {
+        background: transparent;
+        color: var(--danger);
+        border: 1px solid var(--danger);
+        padding: 0.3rem 0.7rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+    }
+    .btn-delete-role:hover:not(:disabled) {
+        background: var(--danger);
+        color: white;
+    }
+    .btn-delete-role:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="roles-container">
+    <div style="margin-bottom: 1.5rem;">
+        <a href="{% url 'dashboard' %}" class="btn" style="background: rgba(255,255,255,0.1); color: var(--text); border: 1px solid var(--glass-border);">
+            ← Volver al Dashboard
+        </a>
+    </div>
+
+    <div class="glass-panel">
+        <h2>Configuración de Roles y Etiquetas</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Crea nuevas categorías de invitados que podrás asignar a los pases.</p>
+
+        <form method="post" style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+            {% csrf_token %}
+            <input type="text" name="name" placeholder="Nombre de la nueva etiqueta (ej: Organizador)" required style="flex: 1;">
+            <button type="submit" class="btn">Agregar Etiqueta</button>
+        </form>
+
+        <div class="role-list">
+            <h3>Etiquetas Existentes</h3>
+            {% if roles_data %}
+                <div style="margin-top: 1rem;">
+                    {% for item in roles_data %}
+                        <div class="role-item">
+                            <div class="role-info">
+                                <span style="font-weight: 600;">{{ item.role.name }}</span>
+                                <span class="role-badge">{{ item.guest_count }} invitados</span>
+                            </div>
+                            <form action="{% url 'delete_role' item.role.pk %}" method="post" onsubmit="return confirm('¿Estás seguro de eliminar esta etiqueta?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn-delete-role" {% if item.guest_count > 0 %}disabled title="No se puede borrar porque está asignado a invitados"{% endif %}>
+                                    Eliminar
+                                </button>
+                            </form>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p style="color: var(--text-muted); text-align: center; margin-top: 1.5rem;">No hay roles registrados.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
