@@ -72,7 +72,7 @@
                     <div class="info-value">{{ guest.name }}</div>
                     
                     <div class="info-label">Rol / Categoría</div>
-                    <div class="info-value">{{ guest.role.name|default:"Sin Rol" }}</div>
+                    <div class="info-value">{{ guest.get_guest_type_display }} · {{ guest.role.name|default:"Sin Rol" }}</div>
                     
                     <div class="info-label">Escuela / Servicio</div>
                     <div class="info-value">{{ guest.school|default:"N/A" }}</div>
@@ -94,7 +94,7 @@
                     <div class="info-value" style="color: white;">{{ guest.name }}</div>
                     
                     <div class="info-label">Rol / Categoría</div>
-                    <div class="info-value">{{ guest.role.name|default:"Sin Rol" }}</div>
+                    <div class="info-value">{{ guest.get_guest_type_display }} · {{ guest.role.name|default:"Sin Rol" }}</div>
                     
                     <div class="info-label">Escuela / Servicio</div>
                     <div class="info-value">{{ guest.school|default:"N/A" }}</div>

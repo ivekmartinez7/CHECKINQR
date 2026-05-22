@@ -94,6 +94,7 @@
         <div id="guest-info" class="guest-info" style="display: none;">
             <div id="guest-name" class="guest-name"></div>
             <div id="guest-role" class="guest-details"></div>
+            <div id="guest-school" class="guest-details"></div>
             <div id="guest-raffle" class="raffle-number"></div>
         </div>
     </div>
@@ -241,7 +242,8 @@
             if (data.guest) {
                 info.style.display = 'block';
                 document.getElementById('guest-name').innerText = data.guest.name;
-                document.getElementById('guest-role').innerText = data.guest.role;
+                document.getElementById('guest-role').innerText = data.guest.guest_type + ' · ' + data.guest.role;
+                document.getElementById('guest-school').innerText = data.guest.school || '';
                 document.getElementById('guest-raffle').innerText = 'Rifa #' + data.guest.raffle_number;
             }
         } else {

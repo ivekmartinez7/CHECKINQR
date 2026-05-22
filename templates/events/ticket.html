@@ -227,6 +227,7 @@
                 {% endif %}
                 
                 <div class="badge-container">
+                    <span class="badge badge-role">{{ guest.get_guest_type_display }}</span>
                     <span class="badge badge-role">{{ guest.role.name|default:"Sin Rol" }}</span>
                     {% if guest.is_checked_in %}
                         <span class="badge badge-status-used">No Válido / Usado</span>
@@ -246,7 +247,12 @@
                     <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; font-weight: 500;">El QR se actualiza cada 10 segundos</div>
                 </div>
 
-                <p class="passes-count">Pases válidos para: <span class="passes-number">{{ guest.passes }}</span> persona(s)</p>
+                <p class="passes-count">
+                    Pase individual: <span class="passes-number">1</span> persona
+                    {% if not guest.parent and guest.passes > 1 %}
+                    <br><span style="font-size: 0.9rem;">Grupo registrado: {{ guest.passes }} personas</span>
+                    {% endif %}
+                </p>
 
                 <!-- Info Grid -->
                 <div class="details-grid">
@@ -262,6 +268,14 @@
                         <div class="detail-item-title">🗺️ Dirección</div>
                         <div class="detail-item-value" style="font-size: 0.85rem;">Av. Adolfo Ruiz Cortines 2221, Xalapa, Ver.</div>
                     </div>
+                    <div>
+                        <div class="detail-item-title">Monto pagado</div>
+                        <div class="detail-item-value">${{ guest.amount_paid|floatformat:2 }}</div>
+                    </div>
+                    <div>
+                        <div class="detail-item-title">No. sorteo</div>
+                        <div class="detail-item-value">#{{ guest.raffle_number }}</div>
+                    </div>
                 </div>
 
                 <!-- Anti-clone security warning -->
@@ -276,6 +290,9 @@
                         Presenta este código QR en la entrada para registrar tu asistencia.
                     </div>
                 {% endif %}
+                <div style="margin-top: 1rem;">
+                    <a href="/survey/{{ guest.uuid }}/" style="color: var(--accent); font-weight: 700; text-decoration: none;">Responder encuesta de satisfacción</a>
+                </div>
             </div>
         </div>
         

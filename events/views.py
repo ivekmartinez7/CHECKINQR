@@ -3,6 +3,8 @@ import time
 import hmac
 import hashlib
 import socket
+import logging
+from decimal import Decimal
 from io import BytesIO
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, JsonResponse
@@ -16,7 +18,63 @@ from django.conf import settings
 from django.contrib import messages
 from django.utils import timezone
 from django.contrib.auth.models import User
-from .models import Guest, GuestRole, ChatMessage
+from django.db.models import Count, Sum, Avg, Q
+from .models import Guest, GuestRole, ChatMessage, SatisfactionQuestion, SatisfactionResponse
+
+logger = logging.getLogger(__name__)
+
+
+DEFAULT_SURVEY_QUESTIONS = [
+    ("¿Cómo calificarías la organización general del evento?", "rating"),
+    ("¿Cómo calificarías la atención recibida durante el registro y acceso?", "rating"),
+    ("¿El servicio cumplió con tus expectativas?", "yes_no"),
+    ("¿Qué mejorarías para el próximo año?", "text"),
+    ("¿Recomendarías este evento o servicio?", "yes_no"),
+]
+
+
+def ensure_default_survey_questions():
+    for index, (text, question_type) in enumerate(DEFAULT_SURVEY_QUESTIONS, start=1):
+        SatisfactionQuestion.objects.get_or_create(
+            text=text,
+            defaults={'question_type': question_type, 'order': index}
+        )
+
+
+def normalize_money(value):
+    try:
+        return Decimal(str(value or '0').replace(',', '')).quantize(Decimal('0.01'))
+    except Exception:
+        return Decimal('0.00')
+
+
+def get_role(role_name):
+    if not role_name:
+        return None
+    role_obj, _ = GuestRole.objects.get_or_create(name=role_name.strip())
+    return role_obj
+
+
+def create_companions_for_holder(holder, request_post):
+    passes = max(int(holder.passes or 1), 1)
+    companions_to_create = max(passes - 1, 0)
+    existing = list(Guest.objects.filter(parent=holder).order_by('id'))
+    for index in range(1, companions_to_create + 1):
+        prefix = f'companion_{index}_'
+        name = (request_post.get(prefix + 'name') or '').strip() or f"Invitado {index} de {holder.name}"
+        role = get_role(request_post.get(prefix + 'role')) or holder.role
+        companion = existing[index - 1] if index <= len(existing) else Guest(parent=holder, guest_type='companion')
+        companion.name = name
+        companion.email = (request_post.get(prefix + 'email') or '').strip() or holder.email
+        companion.phone = (request_post.get(prefix + 'phone') or '').strip() or holder.phone
+        companion.passes = 1
+        companion.role = role
+        companion.school = (request_post.get(prefix + 'school') or '').strip() or holder.school
+        companion.gender = request_post.get(prefix + 'gender') or holder.gender
+        companion.amount_paid = normalize_money(request_post.get(prefix + 'amount_paid') or holder.amount_paid)
+        companion.save()
+    for extra in existing[companions_to_create:]:
+        extra.delete()
 
 def generate_dynamic_token(guest_uuid, time_offset=0):
     time_window = int(time.time() // 10) + time_offset
@@ -27,9 +85,12 @@ def send_guest_email(guest):
     if not guest.email or not settings.EMAIL_HOST_USER:
         return False
     try:
+        public_base_url = getattr(settings, 'PUBLIC_BASE_URL', 'https://checkinparty.systemsivek.win').rstrip('/')
+        ticket_url = f"{public_base_url}/ticket/{guest.uuid}/"
+
         # Generate QR Image
         qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(str(guest.uuid))
+        qr.add_data(ticket_url)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")
         buffer = BytesIO()
@@ -37,11 +98,11 @@ def send_guest_email(guest):
         
         # Create Email
         subject = f"Confirmación de Registro - {guest.name}"
-        html_content = render_to_string('events/email_template.html', {'guest': guest})
+        html_content = render_to_string('events/email_template.html', {'guest': guest, 'ticket_url': ticket_url})
         
         msg = EmailMultiAlternatives(
             subject,
-            "Tu registro ha sido confirmado. Abre este correo en un lector HTML para ver tu código QR.",
+            f"Tu registro ha sido confirmado. Abre tu boleto dinámico aquí: {ticket_url}",
             settings.EMAIL_HOST_USER,
             [guest.email]
         )
@@ -53,9 +114,10 @@ def send_guest_email(guest):
         msg.attach(image)
         
         msg.send(fail_silently=False)
+        logger.info("Correo de boleto enviado a %s para guest_id=%s", guest.email, guest.id)
         return True
     except Exception as e:
-        print(f"Error sending email: {e}")
+        logger.exception("Error enviando correo a %s para guest_id=%s: %s", guest.email, guest.id, e)
         return False
 
 @login_required
@@ -66,9 +128,9 @@ def resend_email(request, pk):
     guest = get_object_or_404(Guest, pk=pk)
     if guest.email:
         if send_guest_email(guest):
-            messages.success(request, f"Correo reenviado exitosamente a {guest.name}.")
+            messages.success(request, f"Correo reenviado exitosamente a {guest.email} ({guest.name}).")
         else:
-            messages.error(request, f"Hubo un error al intentar enviar el correo a {guest.name}.")
+            messages.error(request, f"No se pudo enviar el correo a {guest.email}. Revisa los logs del servidor para ver el error SMTP.")
     else:
         messages.error(request, f"{guest.name} no tiene un correo electrónico registrado.")
     
@@ -86,13 +148,23 @@ def dashboard(request):
         passes = request.POST.get('passes', 1)
         role_name = request.POST.get('role')
         school = request.POST.get('school')
+        gender = request.POST.get('gender', '')
+        amount_paid = normalize_money(request.POST.get('amount_paid'))
         
         try:
-            role_obj = None
-            if role_name:
-                role_obj, _ = GuestRole.objects.get_or_create(name=role_name)
-            guest = Guest(name=name, email=email, phone=phone, passes=int(passes), role=role_obj, school=school)
+            role_obj = get_role(role_name)
+            guest = Guest(
+                name=name,
+                email=email,
+                phone=phone,
+                passes=int(passes),
+                role=role_obj,
+                school=school,
+                gender=gender,
+                amount_paid=amount_paid,
+            )
             guest.save()
+            create_companions_for_holder(guest, request.POST)
             
             if guest.email:
                 send_guest_email(guest)
@@ -104,9 +176,12 @@ def dashboard(request):
         except ValidationError as e:
             messages.error(request, "Error de validación al agregar invitado.")
 
-    guests = Guest.objects.all().order_by('-created_at')
+    guests = Guest.objects.select_related('role', 'parent').all().order_by('-created_at')
     total = guests.count()
     checked_in = guests.filter(is_checked_in=True).count()
+    total_paid = guests.aggregate(total=Sum('amount_paid'))['total'] or Decimal('0.00')
+    holders_count = guests.filter(parent__isnull=True).count()
+    companions_count = guests.filter(parent__isnull=False).count()
     roles = GuestRole.objects.all().order_by('name')
     
     # Calculate role statistics
@@ -125,6 +200,9 @@ def dashboard(request):
         'guests': guests,
         'total': total,
         'checked_in': checked_in,
+        'total_paid': total_paid,
+        'holders_count': holders_count,
+        'companions_count': companions_count,
         'roles': roles,
         'roles_stats': roles_stats,
     }
@@ -143,16 +221,16 @@ def edit_guest(request, pk):
         guest.email = request.POST.get('email')
         guest.phone = request.POST.get('phone')
         guest.passes = int(request.POST.get('passes', 1))
+        guest.gender = request.POST.get('gender', '')
+        guest.amount_paid = normalize_money(request.POST.get('amount_paid'))
         
         role_name = request.POST.get('role')
-        if role_name:
-            role_obj, _ = GuestRole.objects.get_or_create(name=role_name)
-            guest.role = role_obj
-        else:
-            guest.role = None
+        guest.role = get_role(role_name)
             
         guest.school = request.POST.get('school')
         guest.save()
+        if guest.parent_id is None:
+            create_companions_for_holder(guest, request.POST)
         
         # Si el correo cambió y no está vacío, reenviar confirmación automáticamente
         if guest.email and guest.email != old_email:
@@ -161,7 +239,8 @@ def edit_guest(request, pk):
             
         return redirect('dashboard')
         
-    return render(request, 'events/guest_form.html', {'guest': guest, 'roles': roles})
+    companions = list(guest.companions.all().order_by('id')) if guest.parent_id is None else []
+    return render(request, 'events/guest_form.html', {'guest': guest, 'roles': roles, 'companions': companions})
 
 @login_required
 def delete_guest(request, pk):
@@ -169,6 +248,18 @@ def delete_guest(request, pk):
         return redirect('scanner')
     guest = get_object_or_404(Guest, pk=pk)
     guest.delete()
+    return redirect('dashboard')
+
+
+@login_required
+def reset_checkin(request, pk):
+    if not request.user.is_superuser:
+        return redirect('scanner')
+    guest = get_object_or_404(Guest, pk=pk)
+    guest.is_checked_in = False
+    guest.checked_in_at = None
+    guest.save(update_fields=['is_checked_in', 'checked_in_at'])
+    messages.success(request, f"El pase de {guest.name} volvió a Pendiente.")
     return redirect('dashboard')
 
 def qr_code_image(request, uuid):
@@ -227,7 +318,9 @@ def api_check_in(request):
                 'guest': {
                     'name': guest.name,
                     'role': guest.role.name if guest.role else 'Sin Rol',
-                    'raffle_number': guest.raffle_number
+                    'raffle_number': guest.raffle_number,
+                    'school': guest.school or '',
+                    'guest_type': guest.get_guest_type_display(),
                 }
             })
         except Guest.DoesNotExist:
@@ -269,7 +362,8 @@ def api_check_in_dynamic(request, uuid, token):
             'name': guest.name,
             'role': guest.role.name if guest.role else 'Sin Rol',
             'raffle_number': guest.raffle_number,
-            'school': guest.school or ''
+            'school': guest.school or '',
+            'guest_type': guest.get_guest_type_display(),
         }
         
         if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.method == 'POST':
@@ -427,7 +521,7 @@ def export_excel(request):
     ws.title = 'Invitados'
     
     # Headers
-    headers = ['Nombre', 'Correo', 'Teléfono', 'Rol', 'Escuela/Servicio', 'No. Rifa', 'Asistió', 'Fecha Ingreso', 'Fecha Registro']
+    headers = ['Tipo', 'Titular', 'Nombre', 'Correo', 'Teléfono', 'Género', 'Pase Individual', 'Grupo Titular', 'Rol', 'Escuela/Servicio', 'Monto Pagado', 'No. Rifa', 'Asistió', 'Fecha Ingreso', 'Fecha Registro']
     ws.append(headers)
     
     # Data
@@ -437,11 +531,17 @@ def export_excel(request):
         checked_in_str = timezone.localtime(guest.checked_in_at).strftime('%Y-%m-%d %H:%M') if guest.checked_in_at else 'N/A'
         date_str = timezone.localtime(guest.created_at).strftime('%Y-%m-%d %H:%M')
         ws.append([
+            guest.get_guest_type_display(),
+            guest.parent.name if guest.parent else '',
             guest.name, 
             guest.email or '', 
             guest.phone or '', 
+            guest.get_gender_display() if guest.gender else '',
+            1,
+            guest.passes if guest.parent_id is None else '',
             guest.role.name if guest.role else '', 
             guest.school or '',
+            float(guest.amount_paid),
             guest.raffle_number, 
             status, 
             checked_in_str,
@@ -464,19 +564,23 @@ def export_pdf(request):
     styles = getSampleStyleSheet()
     elements.append(Paragraph("Lista de Invitados", styles['Title']))
     
-    data = [['Nombre', 'Rol', 'No. Rifa', 'Asistió']]
+    data = [['Tipo', 'Nombre', 'Pase', 'Grupo', 'Rol', 'Monto', 'No. Rifa', 'Asistió']]
     
     guests = Guest.objects.all().order_by('name')
     for guest in guests:
         status = 'Sí' if guest.is_checked_in else 'No'
         data.append([
+            guest.get_guest_type_display(),
             guest.name[:30], 
+            '1',
+            str(guest.passes) if guest.parent_id is None and guest.passes > 1 else '',
             guest.role.name if guest.role else 'Sin Rol', 
+            f"${guest.amount_paid}",
             str(guest.raffle_number), 
             status
         ])
         
-    t = Table(data, colWidths=[250, 100, 60, 60])
+    t = Table(data, colWidths=[55, 140, 35, 40, 70, 55, 50, 50])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#6366f1')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
@@ -514,7 +618,7 @@ def import_excel(request):
             
             # Skip header row
             for row in ws.iter_rows(min_row=2, values_only=True):
-                # Expected columns: Nombre, Correo, Teléfono, Pases, Rol, Escuela/Servicio
+                # Expected columns: Nombre, Correo, Teléfono, Pases, Rol, Escuela/Servicio, Género, Monto Pagado
                 if not row[0]: # Nombre is required
                     continue
                     
@@ -529,14 +633,28 @@ def import_excel(request):
                     
                 role_name = str(row[4]).strip() if row[4] else 'Docente'
                 school = str(row[5]).strip() if len(row) > 5 and row[5] else ''
+                gender = str(row[6]).strip().upper()[:1] if len(row) > 6 and row[6] else ''
+                amount_paid = normalize_money(row[7] if len(row) > 7 else 0)
                 
-                role_obj = None
-                if role_name:
-                    role_obj, _ = GuestRole.objects.get_or_create(name=role_name)
+                role_obj = get_role(role_name)
                     
-                guest = Guest(name=name, email=email, phone=phone, passes=passes, role=role_obj, school=school)
+                guest = Guest(name=name, email=email, phone=phone, passes=passes, role=role_obj, school=school, gender=gender, amount_paid=amount_paid)
                 try:
                     guest.save()
+                    for companion_index in range(1, max(passes - 1, 0) + 1):
+                        companion = Guest(
+                            parent=guest,
+                            guest_type='companion',
+                            name=f"Invitado {companion_index} de {guest.name}",
+                            email=guest.email,
+                            phone=guest.phone,
+                            passes=1,
+                            role=guest.role,
+                            school=guest.school,
+                            gender=guest.gender,
+                            amount_paid=guest.amount_paid,
+                        )
+                        companion.save()
                     imported_count += 1
                     
                     if guest.email:
@@ -551,6 +669,147 @@ def import_excel(request):
             messages.error(request, f'Error al procesar el archivo Excel: {str(e)}')
             
     return redirect('dashboard')
+
+
+def build_executive_report_data(gender_filter=''):
+    ensure_default_survey_questions()
+    guests = Guest.objects.select_related('role', 'parent').all()
+    if gender_filter:
+        guests = guests.filter(gender=gender_filter)
+
+    total = guests.count()
+    checked_in = guests.filter(is_checked_in=True).count()
+    total_paid = guests.aggregate(total=Sum('amount_paid'))['total'] or Decimal('0.00')
+    holders_paid = guests.filter(parent__isnull=True).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0.00')
+    companions_paid = guests.filter(parent__isnull=False).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0.00')
+    holders_count = guests.filter(parent__isnull=True).count()
+    companions_count = guests.filter(parent__isnull=False).count()
+
+    role_rows = list(
+        guests.values('role__name')
+        .annotate(total=Count('id'), checked_in=Count('id', filter=Q(is_checked_in=True)), amount=Sum('amount_paid'))
+        .order_by('role__name')
+    )
+    school_rows = list(
+        guests.values('school')
+        .annotate(total=Count('id'), checked_in=Count('id', filter=Q(is_checked_in=True)), amount=Sum('amount_paid'))
+        .order_by('-total')[:12]
+    )
+    gender_rows = list(
+        guests.values('gender')
+        .annotate(total=Count('id'), checked_in=Count('id', filter=Q(is_checked_in=True)), amount=Sum('amount_paid'))
+        .order_by('gender')
+    )
+    survey_rows = list(
+        SatisfactionQuestion.objects.filter(is_active=True)
+        .annotate(avg_rating=Avg('responses__rating'), responses_count=Count('responses'))
+        .values('id', 'text', 'question_type', 'avg_rating', 'responses_count')
+    )
+    for rows in (role_rows, school_rows, gender_rows):
+        for row in rows:
+            row['amount'] = float(row['amount'] or 0)
+    for row in survey_rows:
+        row['avg_rating'] = round(float(row['avg_rating'] or 0), 2)
+
+    attendance_rate = round((checked_in / total * 100), 1) if total else 0
+    analysis = [
+        f"Asistencia general: {attendance_rate}% ({checked_in} de {total} registros).",
+        f"Corte de caja total: ${total_paid:.2f}; titulares ${holders_paid:.2f} e invitados ${companions_paid:.2f}.",
+        f"Distribución: {holders_count} titulares y {companions_count} invitados/acompañantes.",
+    ]
+    if school_rows:
+        top_school = school_rows[0]['school'] or 'Sin escuela/servicio'
+        analysis.append(f"Mayor participación por escuela/servicio: {top_school} con {school_rows[0]['total']} registros.")
+
+    return {
+        'filters': {'gender': gender_filter},
+        'summary': {
+            'total': total,
+            'checked_in': checked_in,
+            'pending': total - checked_in,
+            'attendance_rate': attendance_rate,
+            'holders_count': holders_count,
+            'companions_count': companions_count,
+            'total_paid': float(total_paid),
+            'holders_paid': float(holders_paid),
+            'companions_paid': float(companions_paid),
+        },
+        'roles': role_rows,
+        'schools': school_rows,
+        'genders': gender_rows,
+        'survey': survey_rows,
+        'analysis': analysis,
+    }
+
+
+@login_required
+def executive_report(request):
+    if not request.user.is_superuser:
+        return redirect('scanner')
+    gender_filter = request.GET.get('gender', '')
+    data = build_executive_report_data(gender_filter)
+    return render(request, 'events/executive_report.html', data)
+
+
+@login_required
+def executive_report_json(request):
+    if not request.user.is_superuser:
+        return redirect('scanner')
+    gender_filter = request.GET.get('gender', '')
+    data = build_executive_report_data(gender_filter)
+    return JsonResponse(data, json_dumps_params={'indent': 2})
+
+
+@login_required
+def survey_crud(request):
+    if not request.user.is_superuser:
+        return redirect('scanner')
+    ensure_default_survey_questions()
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        question_id = request.POST.get('question_id')
+        if action == 'delete' and question_id:
+            SatisfactionQuestion.objects.filter(pk=question_id).delete()
+            messages.success(request, "Pregunta eliminada.")
+        else:
+            text = request.POST.get('text', '').strip()
+            if text:
+                question_type = request.POST.get('question_type', 'rating')
+                order = int(request.POST.get('order') or 0)
+                is_active = request.POST.get('is_active') == '1'
+                if question_id:
+                    question = get_object_or_404(SatisfactionQuestion, pk=question_id)
+                    question.text = text
+                    question.question_type = question_type
+                    question.order = order
+                    question.is_active = is_active
+                    question.save()
+                    messages.success(request, "Pregunta actualizada.")
+                else:
+                    SatisfactionQuestion.objects.create(text=text, question_type=question_type, order=order, is_active=is_active)
+                    messages.success(request, "Pregunta agregada.")
+        return redirect('survey_crud')
+    questions = SatisfactionQuestion.objects.all()
+    return render(request, 'events/survey_crud.html', {'questions': questions})
+
+
+def survey_view(request, uuid):
+    guest = get_object_or_404(Guest, uuid=uuid)
+    ensure_default_survey_questions()
+    questions = SatisfactionQuestion.objects.filter(is_active=True)
+    if request.method == 'POST':
+        for question in questions:
+            value = request.POST.get(f'question_{question.id}', '').strip()
+            response, _ = SatisfactionResponse.objects.get_or_create(guest=guest, question=question)
+            if question.question_type == 'rating':
+                response.rating = int(value or 0) or None
+                response.answer_text = ''
+            else:
+                response.rating = None
+                response.answer_text = value
+            response.save()
+        return render(request, 'events/survey_thanks.html', {'guest': guest})
+    return render(request, 'events/survey.html', {'guest': guest, 'questions': questions})
 
 @login_required
 def manage_staff(request):

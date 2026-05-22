@@ -1,13 +1,13 @@
 <div id="chat-toggle-btn" class="chat-toggle" onclick="toggleChat()">
-    <span>💬 Chat Staff</span>
+    <span>Chat Staff</span>
     <span id="chat-badge" class="chat-badge" style="display: none;">0</span>
 </div>
 
 <div id="chat-sidebar" class="chat-sidebar">
     <div class="chat-header">
-        <h3>💬 Chat de Staff</h3>
+        <h3>Chat de Staff</h3>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button onclick="clearChatHistory()" title="Limpiar conversación" style="background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 0.2rem;">🗑️</button>
+            <button onclick="clearChatHistory()" title="Limpiar conversación" style="background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.85rem; padding: 0.2rem; font-weight: 800;">Limpiar</button>
             <button class="chat-close" onclick="toggleChat()">✕</button>
         </div>
     </div>
@@ -40,24 +40,27 @@
 <style>
     .chat-toggle {
         position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background: var(--primary);
-        color: white;
-        padding: 0.8rem 1.5rem;
-        border-radius: 50px;
-        font-weight: 600;
+        bottom: 18px;
+        right: 18px;
+        background: rgba(17, 24, 39, 0.94);
+        color: var(--text-soft);
+        padding: 0.65rem 0.9rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-strong);
+        font-weight: 800;
+        font-size: 0.86rem;
         cursor: pointer;
         z-index: 1000;
-        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: all 0.2s ease;
     }
     .chat-toggle:hover {
-        transform: translateY(-3px) scale(1.05);
-        box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5);
+        color: var(--text-main);
+        border-color: rgba(20, 184, 166, 0.42);
+        transform: translateY(-1px);
     }
     .chat-badge {
         background: var(--danger);
@@ -73,9 +76,9 @@
         right: -360px;
         width: 350px;
         height: 100%;
-        background: rgba(17, 24, 39, 0.95);
+        background: rgba(17, 24, 39, 0.98);
         backdrop-filter: blur(16px);
-        border-left: 1px solid var(--glass-border);
+        border-left: 1px solid var(--border);
         box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
         z-index: 1001;
         display: flex;
@@ -87,7 +90,7 @@
     }
     .chat-header {
         padding: 1rem;
-        border-bottom: 1px solid var(--glass-border);
+        border-bottom: 1px solid var(--border);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -125,7 +128,7 @@
     }
     .chat-bubble.sent {
         align-self: flex-end;
-        background: var(--primary);
+        background: var(--accent);
         color: white;
         border-bottom-right-radius: 2px;
     }
@@ -195,11 +198,11 @@
         transform: scale(1.05);
     }
     .chat-send-btn {
-        background: var(--primary);
+        background: var(--accent);
         border: none;
     }
     .chat-send-btn:hover {
-        background: #4f46e5;
+        background: var(--accent-hover);
     }
     .record-status {
         display: flex;
