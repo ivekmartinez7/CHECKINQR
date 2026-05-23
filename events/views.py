@@ -4,11 +4,14 @@ import hmac
 import hashlib
 import socket
 import logging
+import json
+import re
 from decimal import Decimal
 from io import BytesIO
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
@@ -914,3 +917,176 @@ def connection_qr_image(request):
     buffer = BytesIO()
     img.save(buffer, format="PNG")
     return HttpResponse(buffer.getvalue(), content_type="image/png")
+
+
+def guest_to_mobile_dict(guest):
+    return {
+        'id': guest.id,
+        'uuid': str(guest.uuid),
+        'parent_id': guest.parent_id,
+        'guest_type': guest.guest_type,
+        'guest_type_label': guest.get_guest_type_display(),
+        'name': guest.name,
+        'email': guest.email or '',
+        'phone': guest.phone or '',
+        'passes': guest.passes,
+        'role': guest.role.name if guest.role else '',
+        'school': guest.school or '',
+        'gender': guest.gender or '',
+        'gender_label': guest.get_gender_display() if guest.gender else '',
+        'amount_paid': float(guest.amount_paid or 0),
+        'raffle_number': guest.raffle_number,
+        'is_checked_in': guest.is_checked_in,
+        'checked_in_at': guest.checked_in_at.isoformat() if guest.checked_in_at else None,
+        'created_at': guest.created_at.isoformat() if guest.created_at else None,
+        'qr_code': str(guest.uuid),
+    }
+
+
+def mobile_summary_data():
+    guests = Guest.objects.select_related('role', 'parent').all()
+    total = guests.count()
+    checked_in = guests.filter(is_checked_in=True).count()
+    total_paid = guests.aggregate(total=Sum('amount_paid'))['total'] or Decimal('0.00')
+    return {
+        'id': 1,
+        'name': 'CheckinParty',
+        'venue': 'Evento activo',
+        'total_guests': total,
+        'checked_in': checked_in,
+        'pending': total - checked_in,
+        'total_paid': float(total_paid),
+        'holders_count': guests.filter(parent__isnull=True).count(),
+        'companions_count': guests.filter(parent__isnull=False).count(),
+    }
+
+
+def parse_json_body(request):
+    try:
+        return json.loads(request.body.decode('utf-8') or '{}')
+    except json.JSONDecodeError:
+        return {}
+
+
+def extract_uuid_from_qr(raw_code):
+    code = (raw_code or '').strip()
+    if not code:
+        return '', ''
+    dynamic_match = re.search(r'/api/checkin-dynamic/([0-9a-fA-F-]{36})/([A-Za-z0-9_-]+)/?', code)
+    if dynamic_match:
+        return dynamic_match.group(1), dynamic_match.group(2)
+    uuid_match = re.search(r'([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})', code)
+    if uuid_match:
+        return uuid_match.group(1), ''
+    return code, ''
+
+
+@csrf_exempt
+def mobile_login(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
+    data = parse_json_body(request)
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    user = authenticate(request, username=username, password=password)
+    if not user:
+        return JsonResponse({'success': False, 'message': 'Usuario o contraseña incorrectos.'}, status=401)
+    if not user.is_active:
+        return JsonResponse({'success': False, 'message': 'Usuario inactivo.'}, status=403)
+    login(request, user)
+    return JsonResponse({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'is_superuser': user.is_superuser,
+            'is_staff': user.is_staff,
+        },
+        'summary': mobile_summary_data(),
+    })
+
+
+@csrf_exempt
+def mobile_logout(request):
+    logout(request)
+    return JsonResponse({'success': True})
+
+
+@login_required
+def mobile_sync(request):
+    guests = Guest.objects.select_related('role', 'parent').all().order_by('name')
+    roles = list(GuestRole.objects.order_by('name').values_list('name', flat=True))
+    return JsonResponse({
+        'success': True,
+        'user': {
+            'id': request.user.id,
+            'username': request.user.username,
+            'is_superuser': request.user.is_superuser,
+            'is_staff': request.user.is_staff,
+        },
+        'summary': mobile_summary_data(),
+        'roles': roles,
+        'guests': [guest_to_mobile_dict(guest) for guest in guests],
+    })
+
+
+@csrf_exempt
+@login_required
+def mobile_check_in(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
+    data = parse_json_body(request)
+    guest_uuid, token = extract_uuid_from_qr(data.get('qr_code') or data.get('uuid'))
+    if not guest_uuid:
+        return JsonResponse({'success': False, 'message': 'Código QR vacío.'}, status=400)
+    if token:
+        is_valid = any(
+            hmac.compare_digest(generate_dynamic_token(str(guest_uuid), time_offset=offset), token)
+            for offset in [0, -1, 1]
+        )
+        if not is_valid:
+            return JsonResponse({'success': False, 'message': 'Código QR expirado o inválido.'}, status=400)
+    try:
+        guest = Guest.objects.select_related('role', 'parent').get(uuid=guest_uuid)
+    except Guest.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Invitado no encontrado.'}, status=404)
+
+    already_checked = guest.is_checked_in
+    if not already_checked:
+        guest.is_checked_in = True
+        guest.checked_in_at = timezone.now()
+        guest.save(update_fields=['is_checked_in', 'checked_in_at'])
+    return JsonResponse({
+        'success': True,
+        'already_checked': already_checked,
+        'message': 'El invitado ya había ingresado.' if already_checked else 'Check-in sincronizado.',
+        'guest': guest_to_mobile_dict(guest),
+        'summary': mobile_summary_data(),
+    })
+
+
+@csrf_exempt
+@login_required
+def mobile_guest_create(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'message': 'Solo administradores pueden crear invitados.'}, status=403)
+    data = parse_json_body(request)
+    name = (data.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'success': False, 'message': 'El nombre es requerido.'}, status=400)
+    guest = Guest(
+        name=name,
+        email=(data.get('email') or '').strip(),
+        phone=(data.get('phone') or '').strip(),
+        passes=int(data.get('passes') or 1),
+        role=get_role(data.get('role')),
+        school=(data.get('school') or '').strip(),
+        gender=(data.get('gender') or '').strip()[:1].upper(),
+        amount_paid=normalize_money(data.get('amount_paid')),
+    )
+    guest.save()
+    if guest.email:
+        send_guest_email(guest)
+    return JsonResponse({'success': True, 'guest': guest_to_mobile_dict(guest), 'summary': mobile_summary_data()})
