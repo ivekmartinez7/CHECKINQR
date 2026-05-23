@@ -961,6 +961,14 @@ def mobile_summary_data():
     }
 
 
+def role_to_mobile_dict(role):
+    return {
+        'id': role.id,
+        'name': role.name,
+        'guest_count': Guest.objects.filter(role=role).count(),
+    }
+
+
 def parse_json_body(request):
     try:
         return json.loads(request.body.decode('utf-8') or '{}')
@@ -1015,7 +1023,7 @@ def mobile_logout(request):
 @login_required
 def mobile_sync(request):
     guests = Guest.objects.select_related('role', 'parent').all().order_by('name')
-    roles = list(GuestRole.objects.order_by('name').values_list('name', flat=True))
+    roles = [role_to_mobile_dict(role) for role in GuestRole.objects.order_by('name')]
     return JsonResponse({
         'success': True,
         'user': {
@@ -1090,3 +1098,97 @@ def mobile_guest_create(request):
     if guest.email:
         send_guest_email(guest)
     return JsonResponse({'success': True, 'guest': guest_to_mobile_dict(guest), 'summary': mobile_summary_data()})
+
+
+@csrf_exempt
+@login_required
+def mobile_guest_detail(request, pk):
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'message': 'Solo administradores.'}, status=403)
+    guest = get_object_or_404(Guest, pk=pk)
+    if request.method == 'GET':
+        return JsonResponse({'success': True, 'guest': guest_to_mobile_dict(guest)})
+    if request.method == 'DELETE':
+        guest.delete()
+        return JsonResponse({'success': True, 'summary': mobile_summary_data()})
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
+    data = parse_json_body(request)
+    guest.name = (data.get('name') or guest.name).strip()
+    guest.email = (data.get('email') or '').strip()
+    guest.phone = (data.get('phone') or '').strip()
+    guest.passes = int(data.get('passes') or guest.passes or 1)
+    guest.role = get_role(data.get('role'))
+    guest.school = (data.get('school') or '').strip()
+    guest.gender = (data.get('gender') or '').strip()[:1].upper()
+    guest.amount_paid = normalize_money(data.get('amount_paid'))
+    guest.save()
+    return JsonResponse({'success': True, 'guest': guest_to_mobile_dict(guest), 'summary': mobile_summary_data()})
+
+
+@csrf_exempt
+@login_required
+def mobile_guest_reset(request, pk):
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'message': 'Solo administradores.'}, status=403)
+    guest = get_object_or_404(Guest, pk=pk)
+    guest.is_checked_in = False
+    guest.checked_in_at = None
+    guest.save(update_fields=['is_checked_in', 'checked_in_at'])
+    return JsonResponse({'success': True, 'guest': guest_to_mobile_dict(guest), 'summary': mobile_summary_data()})
+
+
+@csrf_exempt
+@login_required
+def mobile_roles(request):
+    if request.method == 'GET':
+        return JsonResponse({'success': True, 'roles': [role_to_mobile_dict(role) for role in GuestRole.objects.order_by('name')]})
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'message': 'Solo administradores.'}, status=403)
+    name = (parse_json_body(request).get('name') or '').strip()
+    if not name:
+        return JsonResponse({'success': False, 'message': 'El nombre del rol es requerido.'}, status=400)
+    role, _ = GuestRole.objects.get_or_create(name=name)
+    return JsonResponse({'success': True, 'role': role_to_mobile_dict(role)})
+
+
+@csrf_exempt
+@login_required
+def mobile_role_detail(request, pk):
+    if request.method != 'DELETE':
+        return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'message': 'Solo administradores.'}, status=403)
+    role = get_object_or_404(GuestRole, pk=pk)
+    if Guest.objects.filter(role=role).exists():
+        return JsonResponse({'success': False, 'message': 'No se puede borrar un rol asignado.'}, status=400)
+    role.delete()
+    return JsonResponse({'success': True})
+
+
+@login_required
+def mobile_report(request):
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'message': 'Solo administradores.'}, status=403)
+    data = build_executive_report_data(request.GET.get('gender', ''))
+    data['success'] = True
+    return JsonResponse(data)
+
+
+@login_required
+def mobile_raffle(request):
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'message': 'Solo administradores.'}, status=403)
+    candidates = Guest.objects.filter(is_checked_in=True).exclude(raffle_number__isnull=True).select_related('role').order_by('raffle_number')
+    return JsonResponse({
+        'success': True,
+        'candidates': [{
+            'id': guest.id,
+            'name': guest.name,
+            'role': guest.role.name if guest.role else 'Sin Rol',
+            'school': guest.school or '',
+            'raffle_number': guest.raffle_number,
+        } for guest in candidates],
+    })
