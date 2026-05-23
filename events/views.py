@@ -996,7 +996,12 @@ def mobile_login(request):
     data = parse_json_body(request)
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
-    user = authenticate(request, username=username, password=password)
+    login_username = username
+    if '@' in username:
+        user_match = User.objects.filter(email__iexact=username).first()
+        if user_match:
+            login_username = user_match.username
+    user = authenticate(request, username=login_username, password=password)
     if not user:
         return JsonResponse({'success': False, 'message': 'Usuario o contraseña incorrectos.'}, status=401)
     if not user.is_active:
