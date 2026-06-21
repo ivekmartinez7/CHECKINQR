@@ -249,6 +249,68 @@
         font-size: 0.88rem;
     }
 
+    .companion-card {
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background: rgba(15, 23, 42, 0.38);
+    }
+
+    .companion-card h4 {
+        margin: 0 0 0.85rem;
+        color: var(--text-main);
+    }
+
+    .mini-note {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        margin: -0.45rem 0 0.85rem;
+    }
+
+    .manual-checkin-modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        place-items: center;
+        padding: 1rem;
+        background: rgba(2, 6, 23, 0.74);
+        z-index: 80;
+    }
+
+    .manual-checkin-modal.is-open {
+        display: grid;
+    }
+
+    .manual-checkin-card {
+        width: min(100%, 440px);
+        background: var(--surface);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        padding: 1.25rem;
+    }
+
+    .manual-checkin-card h3 {
+        margin-bottom: 0.35rem;
+    }
+
+    .manual-checkin-card p {
+        color: var(--text-muted);
+        margin-top: 0;
+    }
+
+    .modal-actions {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 0.25rem;
+    }
+
+    .modal-actions .btn {
+        flex: 1;
+        text-align: center;
+    }
+
     @media (max-width: 992px) {
         .dashboard-grid { 
             grid-template-columns: 1fr; 
@@ -302,7 +364,7 @@
     {% if request.user.is_superuser %}
     <div class="glass-panel stat-card" style="display: flex; flex-direction: column; justify-content: center;">
         <h3 style="margin-top: 0;">Importación Masiva</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted);">Sube un archivo .xlsx con: Nombre, Correo, Teléfono, Pases, Rol, Escuela/Servicio, Género, Monto Pagado.</p>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">Sube un archivo .xlsx con: Nombre, Correo, Teléfono, Pases, Rol, Escuela/Servicio, Género, Total Pagado.</p>
         <form action="{% url 'import_excel' %}" method="POST" enctype="multipart/form-data">
             {% csrf_token %}
             <input type="file" name="excel_file" accept=".xlsx, .xls" required style="margin-bottom: 1rem; width: 100%;">
@@ -316,7 +378,7 @@
     {% if request.user.is_superuser %}
     <div class="glass-panel form-card">
         <h2>Registrar Invitado</h2>
-        <p class="section-note">Captura al titular y genera acompañantes automáticamente según los pases.</p>
+        <p class="section-note">Captura al titular. Los acompañantes sólo necesitan nombre; teléfono, correo y datos generales quedan ligados al titular.</p>
         <form method="POST">
             {% csrf_token %}
             <label>Nombre Completo</label>
@@ -349,8 +411,9 @@
                 <option value="O">Otro</option>
             </select>
 
-            <label>Monto Pagado</label>
-            <input type="number" name="amount_paid" value="0" min="0" step="0.01">
+            <label>Total Pagado del Grupo</label>
+            <input type="number" id="group-amount-input" name="group_amount_paid" value="0" min="0" step="0.01">
+            <p class="mini-note">Se reparte entre los pases para que el corte de caja muestre cada boleto por separado.</p>
 
             <div id="companions-container"></div>
             
@@ -405,7 +468,7 @@
                     <td>
                         {{ guest.phone|default:'-' }}<br>
                         {% if guest.phone %}
-                        <a href="https://wa.me/{{ guest.phone }}?text=Hola%20{{ guest.name|urlencode }},%20tu%20registro%20está%20confirmado.%20Este%20boleto%20es%20para%201%20acceso%20individual{% if not guest.parent and guest.passes > 1 %}%20de%20un%20grupo%20de%20{{ guest.passes }}%20personas{% endif %}.%20Sorteo:%20%23{{ guest.raffle_number }}.%20Día:%20Jueves%2018%20Junio,%2013:00hrs.%20Lugar:%20Salón%20Quinta%20Real.%20Dirección:%20Av.%20Adolfo%20Ruiz%20Cortines%202221.%20Aquí%20está%20tu%20boleto%20digital%20y%20código%20QR%20para%20entrar:%20https://checkinparty.systemsivek.win/ticket/{{ guest.uuid }}/" target="_blank" class="qr-link">WhatsApp</a>
+                        <a href="https://wa.me/{{ guest.phone }}?text=Hola%20{{ guest.name|urlencode }},%20tu%20registro%20est%C3%A1%20confirmado.%20Este%20boleto%20es%20para%201%20acceso%20individual{% if not guest.parent and guest.passes > 1 %}%20de%20un%20grupo%20de%20{{ guest.passes }}%20personas{% endif %}.%20Sorteo:%20%23{{ guest.raffle_number }}.%20D%C3%ADa:%20Jueves%2018%20Junio,%2013:00hrs.%20Lugar:%20Sal%C3%B3n%20Quinta%20Tecuanapan.%20Direcci%C3%B3n:%20Del%20Campesino%2040,%20Obrero%20Campesina,%2091020%20Xalapa-Enr%C3%ADquez,%20Ver.%20Mapa:%20https%3A%2F%2Fwww.google.com%2Fmaps%2Fsearch%2F%3Fapi%3D1%26query%3DSal%25C3%25B3n%2520Quinta%2520Tecuanapan%252C%2520Del%2520Campesino%252040%252C%2520Obrero%2520Campesina%252C%252091020%2520Xalapa-Enr%25C3%25ADquez%252C%2520Ver.%20Aqu%C3%AD%20est%C3%A1%20tu%20boleto%20digital%20y%20c%C3%B3digo%20QR%20para%20entrar:%20https://checkinparty.systemsivek.win/ticket/{{ guest.uuid }}/" target="_blank" class="qr-link">WhatsApp</a>
                         {% endif %}
                     </td>
                     <td>
@@ -448,6 +511,9 @@
                             <span class="action-muted">Sin correo</span>
                             {% endif %}
                             <a href="/survey/{{ guest.uuid }}/" target="_blank" class="action-btn" title="Encuesta">Encuesta</a>
+                            {% if not guest.is_checked_in %}
+                            <button type="button" class="action-btn action-primary manual-checkin-btn" data-url="{% url 'manual_checkin' guest.pk %}" data-name="{{ guest.name }}" title="Marcar asistencia después de identificar al invitado">Check-in manual</button>
+                            {% endif %}
                             <a href="{% url 'edit_guest' guest.pk %}" class="action-btn" title="Editar">Editar</a>
                             <a href="{% url 'delete_guest' guest.pk %}" class="action-btn action-danger" onclick="return confirm('¿Seguro que deseas eliminar a este invitado?');" title="Eliminar">Eliminar</a>
                         </div>
@@ -468,49 +534,73 @@
     </div>
 </div>
 
+<div id="manual-checkin-modal" class="manual-checkin-modal" aria-hidden="true">
+    <div class="manual-checkin-card">
+        <h3>Check-in manual</h3>
+        <p id="manual-checkin-copy">Confirma con tu contraseña de staff después de identificar al invitado.</p>
+        <form id="manual-checkin-form" method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <label>Contraseña de staff</label>
+            <input type="password" id="manual-checkin-password" name="staff_password" autocomplete="current-password" required>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="manual-checkin-cancel">Cancelar</button>
+                <button type="submit" class="btn">Confirmar check-in</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         const passesInput = document.getElementById('passes-input');
+        const groupAmountInput = document.getElementById('group-amount-input');
         const companionsContainer = document.getElementById('companions-container');
         const roleOptions = `{% for r in roles %}<option value="{{ r.name|escapejs }}">{{ r.name|escapejs }}</option>{% endfor %}`;
+
+        function splitAmount(total, passes) {
+            const cents = Math.round((Number(total) || 0) * 100);
+            const base = Math.floor(cents / passes);
+            const remainder = cents % passes;
+            return Array.from({ length: passes }, (_, index) => ((base + (index < remainder ? 1 : 0)) / 100).toFixed(2));
+        }
 
         function renderCompanionFields() {
             if (!passesInput || !companionsContainer) return;
             const passes = Math.max(parseInt(passesInput.value || '1', 10), 1);
+            const amounts = splitAmount(groupAmountInput ? groupAmountInput.value : 0, passes);
             companionsContainer.innerHTML = '';
-            if (passes <= 1) return;
+            const holderAmount = document.createElement('input');
+            holderAmount.type = 'hidden';
+            holderAmount.name = 'amount_paid';
+            holderAmount.value = amounts[0] || '0.00';
+            companionsContainer.appendChild(holderAmount);
+            if (passes <= 1) {
+                return;
+            }
             const title = document.createElement('h3');
             title.textContent = 'Datos de acompañantes';
             title.style.marginTop = '1rem';
             companionsContainer.appendChild(title);
+            const note = document.createElement('p');
+            note.className = 'mini-note';
+            note.textContent = 'Nombre para identificar cada pase. Correo, teléfono y servicio se toman del titular.';
+            companionsContainer.appendChild(note);
             for (let i = 1; i < passes; i++) {
                 const section = document.createElement('div');
-                section.style.border = '1px solid var(--glass-border)';
-                section.style.borderRadius = '8px';
-                section.style.padding = '1rem';
-                section.style.marginBottom = '1rem';
+                section.className = 'companion-card';
                 section.innerHTML = `
+                    <h4>Acompañante ${i}</h4>
                     <label>Acompañante ${i} - Nombre</label>
                     <input type="text" name="companion_${i}_name" placeholder="Invitado ${i} del titular">
-                    <label>Correo</label>
-                    <input type="email" name="companion_${i}_email" placeholder="Si se deja vacío usa el del titular">
-                    <label>Teléfono</label>
-                    <input type="text" name="companion_${i}_phone" placeholder="Si se deja vacío usa el del titular">
                     <label>Rol / Etiqueta</label>
                     <select name="companion_${i}_role">${roleOptions}</select>
-                    <label>Escuela / Servicio</label>
-                    <input type="text" name="companion_${i}_school" placeholder="Si se deja vacío usa el del titular">
-                    <label>Género</label>
-                    <select name="companion_${i}_gender">
-                        <option value="">Sin especificar</option>
-                        <option value="M">Hombre</option>
-                        <option value="F">Mujer</option>
-                        <option value="O">Otro</option>
-                    </select>
-                    <label>Monto Pagado</label>
-                    <input type="number" name="companion_${i}_amount_paid" value="0" min="0" step="0.01">
+                    <label>Monto de este pase</label>
+                    <input type="number" name="companion_${i}_amount_paid" value="${amounts[i] || '0.00'}" min="0" step="0.01">
                 `;
                 companionsContainer.appendChild(section);
             }
@@ -518,6 +608,9 @@
 
         if (passesInput) {
             passesInput.addEventListener('input', renderCompanionFields);
+            if (groupAmountInput) {
+                groupAmountInput.addEventListener('input', renderCompanionFields);
+            }
             renderCompanionFields();
         }
 
@@ -595,6 +688,48 @@
             });
         });
 
+        const manualModal = document.getElementById('manual-checkin-modal');
+        const manualForm = document.getElementById('manual-checkin-form');
+        const manualCopy = document.getElementById('manual-checkin-copy');
+        const manualPassword = document.getElementById('manual-checkin-password');
+        const manualCancel = document.getElementById('manual-checkin-cancel');
+
+        function closeManualModal() {
+            if (!manualModal || !manualPassword) return;
+            manualModal.classList.remove('is-open');
+            manualModal.setAttribute('aria-hidden', 'true');
+            manualPassword.value = '';
+        }
+
+        document.querySelectorAll('.manual-checkin-btn').forEach((button) => {
+            button.addEventListener('click', () => {
+                if (!manualModal || !manualForm || !manualCopy || !manualPassword) return;
+                manualForm.action = button.dataset.url || '';
+                manualCopy.textContent = `Confirma con tu contraseña de staff para registrar manualmente a ${button.dataset.name || 'este invitado'}.`;
+                manualModal.classList.add('is-open');
+                manualModal.setAttribute('aria-hidden', 'false');
+                manualPassword.focus();
+            });
+        });
+
+        if (manualCancel) {
+            manualCancel.addEventListener('click', closeManualModal);
+        }
+
+        if (manualModal) {
+            manualModal.addEventListener('click', (event) => {
+                if (event.target === manualModal) {
+                    closeManualModal();
+                }
+            });
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeManualModal();
+            }
+        });
+
         const ctx = document.getElementById('attendanceChart').getContext('2d');
         const total = {{ total }};
         const checkedIn = {{ checked_in }};
@@ -625,5 +760,4 @@
     });
 </script>
 {% include 'events/chat_panel.html' %}
-{% endblock %}
 {% endblock %}

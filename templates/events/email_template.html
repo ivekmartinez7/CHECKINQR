@@ -30,9 +30,17 @@
                     {% endif %}
                     <li><strong>🎲 Número de Sorteo:</strong> #{{ guest.raffle_number }}</li>
                     <li><strong>📅 Fecha:</strong> Jueves 18 de Junio, 13:00 HRS</li>
-                    <li><strong>📍 Ubicación:</strong> Salón "Quinta Real"</li>
-                    <li><strong>🗺️ Dirección:</strong> Av. Adolfo Ruiz Cortines 2221, Obrero Campesina, Xalapa, Ver. (<a href="https://www.google.com/maps/search/?api=1&query=Salón+Quinta+Real,+Av.+Adolfo+Ruiz+Cortines+2221,+Xalapa" style="color: #6366f1;">Ver Mapa</a>)</li>
+                    <li><strong>📍 Ubicación:</strong> {{ event_location_name }}</li>
+                    <li><strong>🗺️ Dirección:</strong> {{ event_location_address }} (<a href="{{ event_location_map_url }}" style="color: #6366f1;">Ver Mapa</a>)</li>
                 </ul>
+            </div>
+
+            <div style="text-align: center; margin: 25px 0; padding: 18px; background-color: #f8fafc; border-radius: 8px;">
+                <p style="font-size: 15px; color: #1e1e2f; margin: 0 0 10px 0; font-weight: bold;">QR de ubicación</p>
+                <a href="{{ event_location_map_url }}" style="display: inline-block;">
+                    <img src="cid:locationqrcode" alt="QR de ubicación" style="width: 150px; height: 150px; border: 3px solid #d4af37; border-radius: 8px;">
+                </a>
+                <p style="font-size: 12px; color: #64748b; margin: 10px 0 0 0;">Escanéalo o da clic para abrir la ubicación en Google Maps.</p>
             </div>
             
             <div style="text-align: center; margin: 30px 0;">

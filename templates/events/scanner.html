@@ -68,6 +68,83 @@
     #scan-btn {
         margin-top: 1rem;
     }
+
+    .manual-panel {
+        width: 100%;
+        max-width: 760px;
+    }
+
+    .manual-search {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.75rem;
+        align-items: end;
+    }
+
+    .manual-results {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+
+    .manual-row {
+        display: grid;
+        grid-template-columns: 1fr minmax(220px, 280px);
+        gap: 1rem;
+        align-items: center;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.55);
+    }
+
+    .manual-name {
+        font-weight: 800;
+        font-size: 1.05rem;
+    }
+
+    .manual-meta {
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+        font-size: 0.86rem;
+    }
+
+    .manual-check-form {
+        display: grid;
+        gap: 0.5rem;
+    }
+
+    .manual-check-form input {
+        margin-bottom: 0;
+    }
+
+    .manual-status {
+        justify-self: end;
+        padding: 0.45rem 0.7rem;
+        border-radius: 8px;
+        font-weight: 800;
+        background: rgba(16, 185, 129, 0.16);
+        color: #6ee7b7;
+        border: 1px solid rgba(16, 185, 129, 0.28);
+    }
+
+    .btn-secondary {
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid var(--border);
+        color: var(--text-soft);
+    }
+
+    @media (max-width: 720px) {
+        .manual-search,
+        .manual-row {
+            grid-template-columns: 1fr;
+        }
+
+        .manual-status {
+            justify-self: stretch;
+            text-align: center;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -97,6 +174,49 @@
             <div id="guest-school" class="guest-details"></div>
             <div id="guest-raffle" class="raffle-number"></div>
         </div>
+    </div>
+
+    <div class="glass-panel manual-panel">
+        <h2>Check-in manual</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1rem;">Si el invitado no trae QR, identifica por nombre, teléfono, escuela o titular. Para marcar entrada se requiere tu contraseña de staff.</p>
+        <form method="GET" action="{% url 'scanner' %}" class="manual-search">
+            <div>
+                <label>Buscar invitado</label>
+                <input type="text" name="q" value="{{ manual_query }}" placeholder="Nombre, teléfono, correo, escuela o titular">
+            </div>
+            <button type="submit" class="btn">Buscar</button>
+        </form>
+
+        {% if manual_query %}
+        <div class="manual-results">
+            {% for guest in manual_results %}
+            <div class="manual-row">
+                <div>
+                    <div class="manual-name">{{ guest.name }}</div>
+                    <div class="manual-meta">
+                        {{ guest.get_guest_type_display }} · {{ guest.role.name|default:"Sin Rol" }} · Rifa #{{ guest.raffle_number }}
+                        {% if guest.parent %} · Titular: {{ guest.parent.name }}{% endif %}
+                    </div>
+                    <div class="manual-meta">
+                        {{ guest.phone|default:"Sin teléfono" }}{% if guest.school %} · {{ guest.school }}{% endif %}
+                    </div>
+                </div>
+                {% if guest.is_checked_in %}
+                <div class="manual-status">Ya ingresó</div>
+                {% else %}
+                <form method="POST" action="{% url 'manual_checkin' guest.pk %}" class="manual-check-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <input type="password" name="staff_password" placeholder="Contraseña de staff" autocomplete="current-password" required>
+                    <button type="submit" class="btn">Confirmar llegada</button>
+                </form>
+                {% endif %}
+            </div>
+            {% empty %}
+            <p style="color: var(--text-muted);">No encontré invitados con esa búsqueda.</p>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
@@ -148,6 +268,11 @@
         }
         
         document.getElementById('scan-btn').style.display = 'inline-block';
+
+        if (decodedText.includes('/group-checkin/')) {
+            window.location.href = decodedText;
+            return;
+        }
         
         // Determine if it is a dynamic URL or a static UUID
         let url = '/api/checkin/';

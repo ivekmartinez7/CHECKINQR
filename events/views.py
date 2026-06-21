@@ -26,6 +26,10 @@ from .models import Guest, GuestRole, ChatMessage, SatisfactionQuestion, Satisfa
 
 logger = logging.getLogger(__name__)
 
+EVENT_LOCATION_NAME = 'Salón Quinta Tecuanapan'
+EVENT_LOCATION_ADDRESS = 'Del Campesino 40, Obrero Campesina, 91020 Xalapa-Enríquez, Ver.'
+EVENT_LOCATION_MAP_URL = 'https://www.google.com/maps/search/?api=1&query=Sal%C3%B3n%20Quinta%20Tecuanapan%2C%20Del%20Campesino%2040%2C%20Obrero%20Campesina%2C%2091020%20Xalapa-Enr%C3%ADquez%2C%20Ver.'
+
 
 DEFAULT_SURVEY_QUESTIONS = [
     ("¿Cómo calificarías la organización general del evento?", "rating"),
@@ -58,7 +62,31 @@ def get_role(role_name):
     return role_obj
 
 
-def create_companions_for_holder(holder, request_post):
+def get_group_holder(guest):
+    return guest.parent if guest.parent_id else guest
+
+
+def get_group_members(holder):
+    return [holder, *list(holder.companions.select_related('role').order_by('id'))]
+
+
+def split_group_payment(total_amount, passes):
+    passes = max(int(passes or 1), 1)
+    total_amount = normalize_money(total_amount)
+    cents = int(total_amount * 100)
+    base_cents, remainder = divmod(cents, passes)
+    return [
+        (Decimal(base_cents + (1 if index < remainder else 0)) / Decimal('100')).quantize(Decimal('0.01'))
+        for index in range(passes)
+    ]
+
+
+def group_total_paid(holder):
+    members = get_group_members(holder)
+    return sum((member.amount_paid or Decimal('0.00') for member in members), Decimal('0.00')).quantize(Decimal('0.01'))
+
+
+def create_companions_for_holder(holder, request_post, payment_shares=None):
     passes = max(int(holder.passes or 1), 1)
     companions_to_create = max(passes - 1, 0)
     existing = list(Guest.objects.filter(parent=holder).order_by('id'))
@@ -66,15 +94,17 @@ def create_companions_for_holder(holder, request_post):
         prefix = f'companion_{index}_'
         name = (request_post.get(prefix + 'name') or '').strip() or f"Invitado {index} de {holder.name}"
         role = get_role(request_post.get(prefix + 'role')) or holder.role
+        submitted_amount = request_post.get(prefix + 'amount_paid')
+        default_amount = payment_shares[index] if payment_shares and index < len(payment_shares) else Decimal('0.00')
         companion = existing[index - 1] if index <= len(existing) else Guest(parent=holder, guest_type='companion')
         companion.name = name
-        companion.email = (request_post.get(prefix + 'email') or '').strip() or holder.email
-        companion.phone = (request_post.get(prefix + 'phone') or '').strip() or holder.phone
+        companion.email = holder.email
+        companion.phone = holder.phone
         companion.passes = 1
         companion.role = role
-        companion.school = (request_post.get(prefix + 'school') or '').strip() or holder.school
-        companion.gender = request_post.get(prefix + 'gender') or holder.gender
-        companion.amount_paid = normalize_money(request_post.get(prefix + 'amount_paid') or holder.amount_paid)
+        companion.school = holder.school
+        companion.gender = ''
+        companion.amount_paid = normalize_money(submitted_amount) if submitted_amount not in (None, '') else default_amount
         companion.save()
     for extra in existing[companions_to_create:]:
         extra.delete()
@@ -84,6 +114,25 @@ def generate_dynamic_token(guest_uuid, time_offset=0):
     message = f"{guest_uuid}-{time_window}"
     return hmac.new(settings.SECRET_KEY.encode(), message.encode(), hashlib.sha256).hexdigest()[:8]
 
+
+def make_qr_png(data, box_size=10, border=4):
+    qr = qrcode.QRCode(version=1, box_size=box_size, border=border)
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def event_location_context():
+    return {
+        'event_location_name': EVENT_LOCATION_NAME,
+        'event_location_address': EVENT_LOCATION_ADDRESS,
+        'event_location_map_url': EVENT_LOCATION_MAP_URL,
+    }
+
+
 def send_guest_email(guest):
     if not guest.email or not settings.EMAIL_HOST_USER:
         return False
@@ -91,17 +140,16 @@ def send_guest_email(guest):
         public_base_url = getattr(settings, 'PUBLIC_BASE_URL', 'https://checkinparty.systemsivek.win').rstrip('/')
         ticket_url = f"{public_base_url}/ticket/{guest.uuid}/"
 
-        # Generate QR Image
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(ticket_url)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
+        ticket_qr_png = make_qr_png(ticket_url)
+        location_qr_png = make_qr_png(EVENT_LOCATION_MAP_URL)
         
         # Create Email
         subject = f"Confirmación de Registro - {guest.name}"
-        html_content = render_to_string('events/email_template.html', {'guest': guest, 'ticket_url': ticket_url})
+        html_content = render_to_string('events/email_template.html', {
+            'guest': guest,
+            'ticket_url': ticket_url,
+            **event_location_context(),
+        })
         
         msg = EmailMultiAlternatives(
             subject,
@@ -112,9 +160,13 @@ def send_guest_email(guest):
         msg.attach_alternative(html_content, "text/html")
         
         # Attach QR as inline image
-        image = MIMEImage(buffer.getvalue())
+        image = MIMEImage(ticket_qr_png)
         image.add_header('Content-ID', '<qrcode>')
         msg.attach(image)
+
+        location_image = MIMEImage(location_qr_png)
+        location_image.add_header('Content-ID', '<locationqrcode>')
+        msg.attach(location_image)
         
         msg.send(fail_silently=False)
         logger.info("Correo de boleto enviado a %s para guest_id=%s", guest.email, guest.id)
@@ -152,7 +204,8 @@ def dashboard(request):
         role_name = request.POST.get('role')
         school = request.POST.get('school')
         gender = request.POST.get('gender', '')
-        amount_paid = normalize_money(request.POST.get('amount_paid'))
+        passes_count = max(int(passes or 1), 1)
+        payment_shares = split_group_payment(request.POST.get('group_amount_paid') or request.POST.get('amount_paid'), passes_count)
         
         try:
             role_obj = get_role(role_name)
@@ -160,14 +213,14 @@ def dashboard(request):
                 name=name,
                 email=email,
                 phone=phone,
-                passes=int(passes),
+                passes=passes_count,
                 role=role_obj,
                 school=school,
                 gender=gender,
-                amount_paid=amount_paid,
+                amount_paid=payment_shares[0],
             )
             guest.save()
-            create_companions_for_holder(guest, request.POST)
+            create_companions_for_holder(guest, request.POST, payment_shares)
             
             if guest.email:
                 send_guest_email(guest)
@@ -223,9 +276,10 @@ def edit_guest(request, pk):
         guest.name = request.POST.get('name')
         guest.email = request.POST.get('email')
         guest.phone = request.POST.get('phone')
-        guest.passes = int(request.POST.get('passes', 1))
+        guest.passes = max(int(request.POST.get('passes', 1)), 1)
         guest.gender = request.POST.get('gender', '')
-        guest.amount_paid = normalize_money(request.POST.get('amount_paid'))
+        payment_shares = split_group_payment(request.POST.get('group_amount_paid') or request.POST.get('amount_paid'), guest.passes)
+        guest.amount_paid = payment_shares[0]
         
         role_name = request.POST.get('role')
         guest.role = get_role(role_name)
@@ -233,7 +287,7 @@ def edit_guest(request, pk):
         guest.school = request.POST.get('school')
         guest.save()
         if guest.parent_id is None:
-            create_companions_for_holder(guest, request.POST)
+            create_companions_for_holder(guest, request.POST, payment_shares)
         
         # Si el correo cambió y no está vacío, reenviar confirmación automáticamente
         if guest.email and guest.email != old_email:
@@ -243,7 +297,12 @@ def edit_guest(request, pk):
         return redirect('dashboard')
         
     companions = list(guest.companions.all().order_by('id')) if guest.parent_id is None else []
-    return render(request, 'events/guest_form.html', {'guest': guest, 'roles': roles, 'companions': companions})
+    return render(request, 'events/guest_form.html', {
+        'guest': guest,
+        'roles': roles,
+        'companions': companions,
+        'group_amount_paid': group_total_paid(guest) if guest.parent_id is None else guest.amount_paid,
+    })
 
 @login_required
 def delete_guest(request, pk):
@@ -265,15 +324,45 @@ def reset_checkin(request, pk):
     messages.success(request, f"El pase de {guest.name} volvió a Pendiente.")
     return redirect('dashboard')
 
+
+@login_required
+def manual_check_in(request, pk):
+    if request.method != 'POST':
+        return redirect('dashboard')
+
+    guest = get_object_or_404(Guest.objects.select_related('role', 'parent'), pk=pk)
+    password = request.POST.get('staff_password') or ''
+    next_url = request.POST.get('next') or 'dashboard'
+
+    confirmed_user = authenticate(request, username=request.user.username, password=password)
+    if confirmed_user is None:
+        messages.error(request, "Contraseña de staff incorrecta. No se registró el check-in manual.")
+        return redirect(next_url)
+
+    if guest.is_checked_in:
+        messages.warning(request, f"{guest.name} ya estaba marcado como asistente.")
+        return redirect(next_url)
+
+    guest.is_checked_in = True
+    guest.checked_in_at = timezone.now()
+    guest.save(update_fields=['is_checked_in', 'checked_in_at'])
+    messages.success(request, f"Check-in manual registrado para {guest.name} después de validar identidad.")
+    return redirect(next_url)
+
 def qr_code_image(request, uuid):
     guest = get_object_or_404(Guest, uuid=uuid)
+    holder = get_group_holder(guest)
+    group_size = 1 + holder.companions.count()
     
     # Calculate token for the current 10-second block
-    token = generate_dynamic_token(str(guest.uuid))
+    token = generate_dynamic_token(str(holder.uuid))
     
     # Generate the dynamic URL
     domain = request.build_absolute_uri('/')[:-1]
-    check_in_url = f"{domain}/api/checkin-dynamic/{guest.uuid}/{token}/"
+    if group_size > 1:
+        check_in_url = f"{domain}/group-checkin/{holder.uuid}/{token}/"
+    else:
+        check_in_url = f"{domain}/api/checkin-dynamic/{guest.uuid}/{token}/"
     
     qr = qrcode.QRCode(
         version=1,
@@ -290,13 +379,86 @@ def qr_code_image(request, uuid):
     img.save(buffer, format="PNG")
     return HttpResponse(buffer.getvalue(), content_type="image/png")
 
+
+def location_qr_image(request):
+    return HttpResponse(make_qr_png(EVENT_LOCATION_MAP_URL), content_type="image/png")
+
+
 def guest_ticket(request, uuid):
     guest = get_object_or_404(Guest, uuid=uuid)
-    return render(request, 'events/ticket.html', {'guest': guest})
+    holder = get_group_holder(guest)
+    group_members = get_group_members(holder)
+    return render(request, 'events/ticket.html', {
+        'guest': guest,
+        'ticket_holder': holder,
+        'group_members': group_members,
+        'group_size': len(group_members),
+        'group_total_paid': group_total_paid(holder),
+        **event_location_context(),
+    })
+
+
+@login_required
+def group_check_in(request, uuid, token):
+    holder = get_object_or_404(Guest.objects.select_related('role'), uuid=uuid, parent__isnull=True)
+    is_valid = request.method == 'POST' or any(
+        hmac.compare_digest(generate_dynamic_token(str(uuid), time_offset=offset), token)
+        for offset in [0, -1, 1]
+    )
+    if not is_valid:
+        return render(request, 'events/group_checkin.html', {
+            'success': False,
+            'message': 'Código QR de grupo expirado o inválido.',
+        })
+
+    if request.method == 'POST':
+        guest_id = request.POST.get('guest_id')
+        member = get_object_or_404(Guest, pk=guest_id)
+        if member.pk == holder.pk or member.parent_id == holder.pk:
+            already_checked = member.is_checked_in
+            if not already_checked:
+                member.is_checked_in = True
+                member.checked_in_at = timezone.now()
+                member.save(update_fields=['is_checked_in', 'checked_in_at'])
+                messages.success(request, f"Check-in registrado para {member.name}.")
+            else:
+                messages.warning(request, f"{member.name} ya estaba marcado como asistente.")
+        else:
+            messages.error(request, "Ese pase no pertenece a este grupo.")
+        return redirect('group_check_in', uuid=uuid, token=generate_dynamic_token(str(holder.uuid)))
+
+    members = get_group_members(holder)
+    checked_count = sum(1 for member in members if member.is_checked_in)
+    return render(request, 'events/group_checkin.html', {
+        'success': True,
+        'holder': holder,
+        'members': members,
+        'checked_count': checked_count,
+        'group_size': len(members),
+        'token': token,
+        **event_location_context(),
+    })
 
 @login_required
 def scanner(request):
-    return render(request, 'events/scanner.html')
+    query = (request.GET.get('q') or '').strip()
+    manual_results = []
+    if query:
+        manual_results = (
+            Guest.objects.select_related('role', 'parent')
+            .filter(
+                Q(name__icontains=query)
+                | Q(phone__icontains=query)
+                | Q(email__icontains=query)
+                | Q(school__icontains=query)
+                | Q(parent__name__icontains=query)
+            )
+            .order_by('is_checked_in', 'name')[:12]
+        )
+    return render(request, 'events/scanner.html', {
+        'manual_query': query,
+        'manual_results': manual_results,
+    })
 
 @csrf_exempt
 def api_check_in(request):
@@ -508,7 +670,7 @@ def raffle_view(request):
 
 import openpyxl
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 
@@ -561,20 +723,31 @@ def export_pdf(request):
     response = HttpResponse(content_type='application/pdf')
     response['Content-Disposition'] = 'attachment; filename="invitados.pdf"'
     
-    doc = SimpleDocTemplate(response, pagesize=letter)
+    doc = SimpleDocTemplate(
+        response,
+        pagesize=landscape(letter),
+        leftMargin=24,
+        rightMargin=24,
+        topMargin=24,
+        bottomMargin=24,
+    )
     elements = []
     
     styles = getSampleStyleSheet()
+    cell_style = styles['BodyText']
+    cell_style.fontSize = 8
+    cell_style.leading = 10
     elements.append(Paragraph("Lista de Invitados", styles['Title']))
     
-    data = [['Tipo', 'Nombre', 'Pase', 'Grupo', 'Rol', 'Monto', 'No. Rifa', 'Asistió']]
+    data = [['Tipo', 'Nombre', 'Servicio', 'Pase', 'Grupo', 'Rol', 'Monto', 'No. Rifa', 'Asistió']]
     
     guests = Guest.objects.all().order_by('name')
     for guest in guests:
         status = 'Sí' if guest.is_checked_in else 'No'
         data.append([
             guest.get_guest_type_display(),
-            guest.name[:30], 
+            Paragraph(guest.name or '', cell_style),
+            Paragraph(guest.school or '', cell_style),
             '1',
             str(guest.passes) if guest.parent_id is None and guest.passes > 1 else '',
             guest.role.name if guest.role else 'Sin Rol', 
@@ -583,7 +756,7 @@ def export_pdf(request):
             status
         ])
         
-    t = Table(data, colWidths=[55, 140, 35, 40, 70, 55, 50, 50])
+    t = Table(data, colWidths=[55, 155, 155, 35, 40, 80, 55, 50, 50])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#6366f1')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
@@ -637,11 +810,12 @@ def import_excel(request):
                 role_name = str(row[4]).strip() if row[4] else 'Docente'
                 school = str(row[5]).strip() if len(row) > 5 and row[5] else ''
                 gender = str(row[6]).strip().upper()[:1] if len(row) > 6 and row[6] else ''
-                amount_paid = normalize_money(row[7] if len(row) > 7 else 0)
+                group_amount_paid = normalize_money(row[7] if len(row) > 7 else 0)
+                payment_shares = split_group_payment(group_amount_paid, passes)
                 
                 role_obj = get_role(role_name)
                     
-                guest = Guest(name=name, email=email, phone=phone, passes=passes, role=role_obj, school=school, gender=gender, amount_paid=amount_paid)
+                guest = Guest(name=name, email=email, phone=phone, passes=passes, role=role_obj, school=school, gender=gender, amount_paid=payment_shares[0])
                 try:
                     guest.save()
                     for companion_index in range(1, max(passes - 1, 0) + 1):
@@ -654,8 +828,8 @@ def import_excel(request):
                             passes=1,
                             role=guest.role,
                             school=guest.school,
-                            gender=guest.gender,
-                            amount_paid=guest.amount_paid,
+                            gender='',
+                            amount_paid=payment_shares[companion_index] if companion_index < len(payment_shares) else Decimal('0.00'),
                         )
                         companion.save()
                     imported_count += 1
@@ -980,6 +1154,9 @@ def extract_uuid_from_qr(raw_code):
     code = (raw_code or '').strip()
     if not code:
         return '', ''
+    group_match = re.search(r'/group-checkin/([0-9a-fA-F-]{36})/([A-Za-z0-9_-]+)/?', code)
+    if group_match:
+        return group_match.group(1), group_match.group(2)
     dynamic_match = re.search(r'/api/checkin-dynamic/([0-9a-fA-F-]{36})/([A-Za-z0-9_-]+)/?', code)
     if dynamic_match:
         return dynamic_match.group(1), dynamic_match.group(2)
@@ -1049,7 +1226,8 @@ def mobile_check_in(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
     data = parse_json_body(request)
-    guest_uuid, token = extract_uuid_from_qr(data.get('qr_code') or data.get('uuid'))
+    raw_qr_code = data.get('qr_code') or data.get('uuid')
+    guest_uuid, token = extract_uuid_from_qr(raw_qr_code)
     if not guest_uuid:
         return JsonResponse({'success': False, 'message': 'Código QR vacío.'}, status=400)
     if token:
@@ -1063,6 +1241,18 @@ def mobile_check_in(request):
         guest = Guest.objects.select_related('role', 'parent').get(uuid=guest_uuid)
     except Guest.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Invitado no encontrado.'}, status=404)
+
+    if raw_qr_code and '/group-checkin/' in raw_qr_code:
+        holder = get_group_holder(guest)
+        members = get_group_members(holder)
+        return JsonResponse({
+            'success': True,
+            'group_checkin': True,
+            'message': 'QR de grupo detectado. Selecciona el pase que llegó.',
+            'holder': guest_to_mobile_dict(holder),
+            'members': [guest_to_mobile_dict(member) for member in members],
+            'summary': mobile_summary_data(),
+        })
 
     already_checked = guest.is_checked_in
     if not already_checked:
@@ -1089,17 +1279,32 @@ def mobile_guest_create(request):
     name = (data.get('name') or '').strip()
     if not name:
         return JsonResponse({'success': False, 'message': 'El nombre es requerido.'}, status=400)
+    passes = max(int(data.get('passes') or 1), 1)
+    payment_shares = split_group_payment(data.get('amount_paid'), passes)
     guest = Guest(
         name=name,
         email=(data.get('email') or '').strip(),
         phone=(data.get('phone') or '').strip(),
-        passes=int(data.get('passes') or 1),
+        passes=passes,
         role=get_role(data.get('role')),
         school=(data.get('school') or '').strip(),
         gender=(data.get('gender') or '').strip()[:1].upper(),
-        amount_paid=normalize_money(data.get('amount_paid')),
+        amount_paid=payment_shares[0],
     )
     guest.save()
+    for companion_index in range(1, max(passes - 1, 0) + 1):
+        Guest.objects.create(
+            parent=guest,
+            guest_type='companion',
+            name=f"Invitado {companion_index} de {guest.name}",
+            email=guest.email,
+            phone=guest.phone,
+            passes=1,
+            role=guest.role,
+            school=guest.school,
+            gender='',
+            amount_paid=payment_shares[companion_index] if companion_index < len(payment_shares) else Decimal('0.00'),
+        )
     if guest.email:
         send_guest_email(guest)
     return JsonResponse({'success': True, 'guest': guest_to_mobile_dict(guest), 'summary': mobile_summary_data()})

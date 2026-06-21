@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    .group-shell {
+        max-width: 760px;
+        margin: 0 auto;
+    }
+
+    .group-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+
+    .group-header p {
+        margin: 0.25rem 0 0;
+        color: var(--text-muted);
+    }
+
+    .group-progress {
+        text-align: right;
+        color: var(--text-soft);
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .member-list {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .member-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 1rem;
+        align-items: center;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.55);
+    }
+
+    .member-name {
+        font-size: 1.1rem;
+        font-weight: 800;
+    }
+
+    .member-meta {
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+        font-size: 0.88rem;
+    }
+
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 2.1rem;
+        padding: 0.45rem 0.7rem;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .status-pending {
+        color: #fde68a;
+        background: rgba(245, 158, 11, 0.16);
+        border: 1px solid rgba(245, 158, 11, 0.28);
+    }
+
+    .status-checked {
+        color: #6ee7b7;
+        background: rgba(16, 185, 129, 0.16);
+        border: 1px solid rgba(16, 185, 129, 0.28);
+    }
+
+    .member-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .scan-actions {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+
+    .btn-secondary {
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid var(--border);
+        color: var(--text-soft);
+    }
+
+    @media (max-width: 640px) {
+        .group-header,
+        .member-row {
+            grid-template-columns: 1fr;
+            display: grid;
+        }
+
+        .group-progress {
+            text-align: left;
+        }
+
+        .member-actions,
+        .scan-actions {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .member-actions .btn,
+        .scan-actions .btn {
+            width: 100%;
+            text-align: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="group-shell">
+    {% if messages %}
+    <div style="margin-bottom: 1rem;">
+        {% for message in messages %}
+        <div style="padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; background: {% if message.tags == 'error' %}rgba(239, 68, 68, 0.2){% elif message.tags == 'warning' %}rgba(245, 158, 11, 0.2){% else %}rgba(16, 185, 129, 0.2){% endif %};">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if not success %}
+    <div class="glass-panel">
+        <h1>QR no válido</h1>
+        <p style="color: var(--text-muted);">{{ message }}</p>
+        <a href="{% url 'scanner' %}" class="btn">Volver al escáner</a>
+    </div>
+    {% else %}
+    <div class="group-header">
+        <div>
+            <h1 style="margin: 0;">Check-in de grupo</h1>
+            <p>{{ holder.name }}{% if holder.phone %} · Tel. titular: {{ holder.phone }}{% endif %}</p>
+            {% if holder.school %}
+            <p>{{ holder.school }}</p>
+            {% endif %}
+        </div>
+        <div class="group-progress">{{ checked_count }} / {{ group_size }} ingresaron</div>
+    </div>
+
+    <div class="glass-panel">
+        <div class="member-list">
+            {% for member in members %}
+            <div class="member-row">
+                <div>
+                    <div class="member-name">{{ member.name }}</div>
+                    <div class="member-meta">{{ member.get_guest_type_display }} · {{ member.role.name|default:"Sin Rol" }} · Pase ${{ member.amount_paid|floatformat:2 }} · Rifa #{{ member.raffle_number }}</div>
+                </div>
+                <div class="member-actions">
+                    {% if member.is_checked_in %}
+                    <span class="status-pill status-checked">Ingresó</span>
+                    {% else %}
+                    <span class="status-pill status-pending">Pendiente</span>
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="guest_id" value="{{ member.id }}">
+                        <button type="submit" class="btn">Marcar llegada</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="scan-actions">
+        <a href="{% url 'scanner' %}" class="btn">Escanear otro QR</a>
+        <a href="{% url 'dashboard' %}" class="btn btn-secondary">Volver al panel</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

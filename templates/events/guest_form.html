@@ -43,6 +43,24 @@
         color: var(--text-soft);
     }
 
+    .companion-card {
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background: rgba(15, 23, 42, 0.38);
+    }
+
+    .companion-card h4 {
+        margin: 0 0 0.85rem;
+    }
+
+    .mini-note {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        margin: -0.45rem 0 0.85rem;
+    }
+
     @media (max-width: 720px) {
         .form-grid { grid-template-columns: 1fr; }
         .form-actions { flex-direction: column; }
@@ -105,8 +123,14 @@
             </div>
 
             <div>
-            <label>Monto Pagado</label>
+            {% if not guest.parent %}
+            <label>Total Pagado del Grupo</label>
+            <input type="number" id="group-amount-input" name="group_amount_paid" value="{{ group_amount_paid|floatformat:2 }}" min="0" step="0.01">
+            <p class="mini-note">Se reparte entre los pases. Puedes ajustar el monto individual de cada acompañante abajo.</p>
+            {% else %}
+            <label>Monto de este pase</label>
             <input type="number" name="amount_paid" value="{{ guest.amount_paid|floatformat:2 }}" min="0" step="0.01">
+            {% endif %}
             </div>
             </div>
 
@@ -127,6 +151,7 @@
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         const passesInput = document.getElementById('passes-input');
+        const groupAmountInput = document.getElementById('group-amount-input');
         const companionsContainer = document.getElementById('companions-container');
         const roleOptions = `{% for r in roles %}<option value="{{ r.name|escapejs }}">{{ r.name|escapejs }}</option>{% endfor %}`;
         const existingCompanions = [
@@ -147,42 +172,45 @@
             return options.replace(`value="${value}"`, `value="${value}" selected`);
         }
 
+        function splitAmount(total, passes) {
+            const cents = Math.round((Number(total) || 0) * 100);
+            const base = Math.floor(cents / passes);
+            const remainder = cents % passes;
+            return Array.from({ length: passes }, (_, index) => ((base + (index < remainder ? 1 : 0)) / 100).toFixed(2));
+        }
+
         function renderCompanionFields() {
             if (!passesInput || !companionsContainer) return;
             const passes = Math.max(parseInt(passesInput.value || '1', 10), 1);
+            const amounts = splitAmount(groupAmountInput ? groupAmountInput.value : 0, passes);
             companionsContainer.innerHTML = '';
+            const holderAmount = document.createElement('input');
+            holderAmount.type = 'hidden';
+            holderAmount.name = 'amount_paid';
+            holderAmount.value = amounts[0] || '0.00';
+            companionsContainer.appendChild(holderAmount);
             if (passes <= 1) return;
             const title = document.createElement('h3');
             title.textContent = 'Datos de acompañantes';
             title.style.marginTop = '1rem';
             companionsContainer.appendChild(title);
+            const note = document.createElement('p');
+            note.className = 'mini-note';
+            note.textContent = 'Nombre para identificar cada pase. Correo, teléfono y servicio se toman del titular.';
+            companionsContainer.appendChild(note);
             for (let i = 1; i < passes; i++) {
                 const current = existingCompanions[i - 1] || {};
                 const section = document.createElement('div');
-                section.style.border = '1px solid var(--glass-border)';
-                section.style.borderRadius = '8px';
-                section.style.padding = '1rem';
-                section.style.marginBottom = '1rem';
+                section.className = 'companion-card';
+                const amountValue = current.amount_paid || amounts[i] || '0.00';
                 section.innerHTML = `
+                    <h4>Acompañante ${i}</h4>
                     <label>Acompañante ${i} - Nombre</label>
                     <input type="text" name="companion_${i}_name" value="${current.name || ''}" placeholder="Invitado ${i} del titular">
-                    <label>Correo</label>
-                    <input type="email" name="companion_${i}_email" value="${current.email || ''}">
-                    <label>Teléfono</label>
-                    <input type="text" name="companion_${i}_phone" value="${current.phone || ''}">
                     <label>Rol / Etiqueta</label>
                     <select name="companion_${i}_role">${optionSelected(roleOptions, current.role || '')}</select>
-                    <label>Escuela / Servicio</label>
-                    <input type="text" name="companion_${i}_school" value="${current.school || ''}">
-                    <label>Género</label>
-                    <select name="companion_${i}_gender">
-                        <option value="" ${!current.gender ? 'selected' : ''}>Sin especificar</option>
-                        <option value="M" ${current.gender === 'M' ? 'selected' : ''}>Hombre</option>
-                        <option value="F" ${current.gender === 'F' ? 'selected' : ''}>Mujer</option>
-                        <option value="O" ${current.gender === 'O' ? 'selected' : ''}>Otro</option>
-                    </select>
-                    <label>Monto Pagado</label>
-                    <input type="number" name="companion_${i}_amount_paid" value="${current.amount_paid || '0'}" min="0" step="0.01">
+                    <label>Monto de este pase</label>
+                    <input type="number" name="companion_${i}_amount_paid" value="${amountValue}" min="0" step="0.01">
                 `;
                 companionsContainer.appendChild(section);
             }
@@ -190,6 +218,9 @@
 
         if (passesInput) {
             passesInput.addEventListener('input', renderCompanionFields);
+            if (groupAmountInput) {
+                groupAmountInput.addEventListener('input', renderCompanionFields);
+            }
             renderCompanionFields();
         }
     });
