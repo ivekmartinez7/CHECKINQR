@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boleto Digital - {{ guest.name }}</title>
+    <title>Boleto Digital - {{ ticket_holder.name }}</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -167,6 +167,62 @@
             text-align: left;
         }
 
+        .group-list {
+            border-top: 1px solid var(--glass-border);
+            padding-top: 1.25rem;
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+
+        .group-list-title {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.75rem;
+        }
+
+        .group-member {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 0.75rem;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .group-member:last-child {
+            border-bottom: 0;
+        }
+
+        .group-member-name {
+            font-weight: 700;
+        }
+
+        .group-member-meta {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            margin-top: 0.2rem;
+        }
+
+        .member-status {
+            border-radius: 8px;
+            padding: 0.35rem 0.55rem;
+            font-size: 0.74rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .member-pending {
+            background: rgba(245, 158, 11, 0.16);
+            color: #fde68a;
+        }
+
+        .member-checked {
+            background: rgba(16, 185, 129, 0.16);
+            color: #6ee7b7;
+        }
+
         .detail-item-title {
             font-size: 0.75rem;
             color: var(--text-muted);
@@ -179,6 +235,34 @@
             font-size: 0.95rem;
             font-weight: 600;
             color: var(--text-main);
+        }
+
+        .location-qr {
+            grid-column: span 2;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.9rem;
+            align-items: center;
+            padding: 0.9rem;
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .location-qr img {
+            width: 92px;
+            height: 92px;
+            display: block;
+            background: white;
+            border-radius: 8px;
+            padding: 0.35rem;
+        }
+
+        .location-map-link {
+            color: var(--accent);
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-decoration: none;
         }
 
         .status-alert-box {
@@ -221,15 +305,16 @@
 
             <!-- Body -->
             <div class="ticket-body">
-                <h2 class="guest-name">{{ guest.name }}</h2>
-                {% if guest.school %}
-                    <p style="margin: -0.25rem 0 1rem 0; color: var(--text-muted); font-size: 1.1rem; font-weight: 500;">🏫 {{ guest.school }}</p>
+                <h2 class="guest-name">{{ ticket_holder.name }}</h2>
+                {% if ticket_holder.school %}
+                    <p style="margin: -0.25rem 0 1rem 0; color: var(--text-muted); font-size: 1.1rem; font-weight: 500;">{{ ticket_holder.school }}</p>
                 {% endif %}
                 
                 <div class="badge-container">
-                    <span class="badge badge-role">{{ guest.role }}</span>
-                    {% if guest.is_checked_in %}
-                        <span class="badge badge-status-used">No Válido / Usado</span>
+                    <span class="badge badge-role">{% if group_size > 1 %}Grupo{% else %}{{ ticket_holder.get_guest_type_display }}{% endif %}</span>
+                    <span class="badge badge-role">{{ ticket_holder.role.name|default:"Sin Rol" }}</span>
+                    {% if group_size == 1 and ticket_holder.is_checked_in %}
+                        <span class="badge badge-status-used">Usado</span>
                     {% else %}
                         <span class="badge badge-status-valid">Válido</span>
                     {% endif %}
@@ -238,17 +323,47 @@
                 <br>
 
                 <!-- QR Code Box -->
-                <div class="qr-box">
-                    <img class="qr-image" src="{% url 'qr_code_image' guest.uuid %}" alt="Código QR de Acceso">
+                <div class="qr-box" style="position: relative;">
+                    <img id="qr-code" class="qr-image" src="{% url 'qr_code_image' ticket_holder.uuid %}" alt="Código QR de Acceso">
+                    <div id="refresh-bar-container" style="width: 100%; height: 4px; background: rgba(0,0,0,0.1); border-radius: 2px; margin-top: 8px; overflow: hidden; position: relative;">
+                        <div id="refresh-bar" style="width: 100%; height: 100%; background: var(--accent); transition: width 0.1s linear;"></div>
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; font-weight: 500;">El QR se actualiza cada 10 segundos</div>
                 </div>
 
-                <p class="passes-count">Pases válidos para: <span class="passes-number">{{ guest.passes }}</span> persona(s)</p>
+                <p class="passes-count">
+                    {% if group_size > 1 %}
+                    Grupo registrado: <span class="passes-number">{{ group_size }}</span> personas
+                    <br><span style="font-size: 0.9rem;">Un QR para el grupo; cada pase se marca por separado en puerta.</span>
+                    {% else %}
+                    Pase individual: <span class="passes-number">1</span> persona
+                    {% endif %}
+                </p>
+
+                {% if group_size > 1 %}
+                <div class="group-list">
+                    <div class="group-list-title">Pases incluidos</div>
+                    {% for member in group_members %}
+                    <div class="group-member">
+                        <div>
+                            <div class="group-member-name">{{ member.name }}</div>
+                            <div class="group-member-meta">{{ member.get_guest_type_display }} · {{ member.role.name|default:"Sin Rol" }} · ${{ member.amount_paid|floatformat:2 }}</div>
+                        </div>
+                        {% if member.is_checked_in %}
+                        <span class="member-status member-checked">Ingresó</span>
+                        {% else %}
+                        <span class="member-status member-pending">Pendiente</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
 
                 <!-- Info Grid -->
                 <div class="details-grid">
                     <div>
                         <div class="detail-item-title">📍 Lugar</div>
-                        <div class="detail-item-value">Salón "Quinta Real"</div>
+                        <div class="detail-item-value">{{ event_location_name }}</div>
                     </div>
                     <div>
                         <div class="detail-item-title">📅 Fecha y Hora</div>
@@ -256,22 +371,42 @@
                     </div>
                     <div style="grid-column: span 2;">
                         <div class="detail-item-title">🗺️ Dirección</div>
-                        <div class="detail-item-value" style="font-size: 0.85rem;">Av. Adolfo Ruiz Cortines 2221, Xalapa, Ver.</div>
+                        <div class="detail-item-value" style="font-size: 0.85rem;">{{ event_location_address }}</div>
+                    </div>
+                    <div class="location-qr">
+                        <a href="{{ event_location_map_url }}" target="_blank" rel="noopener">
+                            <img src="{% url 'location_qr' %}" alt="QR de ubicación">
+                        </a>
+                        <div>
+                            <div class="detail-item-title">QR de ubicación</div>
+                            <a class="location-map-link" href="{{ event_location_map_url }}" target="_blank" rel="noopener">Abrir Google Maps</a>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="detail-item-title">Monto pagado</div>
+                        <div class="detail-item-value">${{ group_total_paid|floatformat:2 }}</div>
+                    </div>
+                    <div>
+                        <div class="detail-item-title">No. sorteo</div>
+                        <div class="detail-item-value">#{{ ticket_holder.raffle_number }}</div>
                     </div>
                 </div>
 
                 <!-- Anti-clone security warning -->
-                {% if guest.is_checked_in %}
+                {% if group_size == 1 and ticket_holder.is_checked_in %}
                     <div class="status-alert-box status-alert-used">
                         <strong>⚠️ BOLETO YA UTILIZADO EN LA PUERTA</strong><br>
                         Este boleto ya fue escaneado para ingresar. Si necesitas asistencia, dirígete a la mesa de control del evento.
                     </div>
                 {% else %}
                     <div class="status-alert-box status-alert-valid">
-                        <strong>✓ BOLETO ÚNICO E INTRANSFERIBLE</strong><br>
-                        Presenta este código QR en la entrada para registrar tu asistencia.
+                        <strong>{% if group_size > 1 %}BOLETO DE GRUPO{% else %}BOLETO ÚNICO E INTRANSFERIBLE{% endif %}</strong><br>
+                        Presenta este código QR en la entrada. Si el grupo llega separado, cada persona puede marcarse de forma individual.
                     </div>
                 {% endif %}
+                <div style="margin-top: 1rem;">
+                    <a href="/survey/{{ ticket_holder.uuid }}/" style="color: var(--accent); font-weight: 700; text-decoration: none;">Responder encuesta de satisfacción</a>
+                </div>
             </div>
         </div>
         
@@ -279,5 +414,28 @@
             Sistemas Ivek • CHECKINQR
         </div>
     </div>
+
+    <script>
+        const qrImage = document.getElementById('qr-code');
+        const refreshBar = document.getElementById('refresh-bar');
+        const qrBaseUrl = "{% url 'qr_code_image' ticket_holder.uuid %}";
+        
+        let secondsLeft = 10;
+        
+        function refreshQR() {
+            qrImage.src = qrBaseUrl + "?t=" + new Date().getTime();
+            secondsLeft = 10;
+        }
+        
+        setInterval(() => {
+            secondsLeft -= 0.1;
+            if (secondsLeft <= 0) {
+                refreshQR();
+            } else {
+                const percentage = (secondsLeft / 10) * 100;
+                refreshBar.style.width = percentage + "%";
+            }
+        }, 100);
+    </script>
 </body>
 </html>

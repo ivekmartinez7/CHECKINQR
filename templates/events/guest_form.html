@@ -1,38 +1,228 @@
 {% extends 'base.html' %}
 
+{% block extra_css %}
+<style>
+    .edit-shell {
+        max-width: 760px;
+        margin: 0 auto;
+    }
+
+    .edit-header {
+        margin-bottom: 1rem;
+    }
+
+    .edit-header p {
+        color: var(--text-muted);
+        margin: 0.25rem 0 0;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 1rem;
+    }
+
+    .form-grid .full {
+        grid-column: 1 / -1;
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+
+    .form-actions .btn {
+        flex: 1;
+        text-align: center;
+    }
+
+    .btn-secondary {
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid var(--border);
+        color: var(--text-soft);
+    }
+
+    .companion-card {
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background: rgba(15, 23, 42, 0.38);
+    }
+
+    .companion-card h4 {
+        margin: 0 0 0.85rem;
+    }
+
+    .mini-note {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        margin: -0.45rem 0 0.85rem;
+    }
+
+    @media (max-width: 720px) {
+        .form-grid { grid-template-columns: 1fr; }
+        .form-actions { flex-direction: column; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div style="max-width: 600px; margin: 0 auto;">
+<div class="edit-shell">
+    <div class="edit-header">
+        <h1 style="margin: 0;">Editar invitado</h1>
+        <p>{{ guest.name }}</p>
+    </div>
     <div class="glass-panel">
-        <h2>Editar Invitado: {{ guest.name }}</h2>
         <form method="POST">
             {% csrf_token %}
+            <div class="form-grid">
+            <div class="full">
             <label>Nombre Completo</label>
             <input type="text" name="name" value="{{ guest.name }}" required>
+            </div>
             
+            <div>
             <label>Correo Electrónico (Opcional)</label>
             <input type="email" name="email" value="{{ guest.email|default:'' }}">
+            </div>
             
+            <div>
             <label>Teléfono (Opcional)</label>
             <input type="text" name="phone" value="{{ guest.phone|default:'' }}">
+            </div>
             
+            <div>
             <label>Cantidad de Pases</label>
-            <input type="number" name="passes" value="{{ guest.passes }}" min="1" max="10" required>
+            <input type="number" id="passes-input" name="passes" value="{{ guest.passes }}" min="1" max="10" required {% if guest.parent %}readonly{% endif %}>
+            </div>
             
+            <div>
             <label>Rol</label>
-            <select name="role">
-                <option value="Docente" {% if guest.role == 'Docente' %}selected{% endif %}>Docente</option>
-                <option value="Jubilada" {% if guest.role == 'Jubilada' %}selected{% endif %}>Jubilada</option>
-                <option value="Acompañante" {% if guest.role == 'Acompañante' %}selected{% endif %}>Acompañante</option>
+            <select name="role" required>
+                {% for r in roles %}
+                    <option value="{{ r.name }}" {% if guest.role.id == r.id %}selected{% endif %}>{{ r.name }}</option>
+                {% endfor %}
             </select>
+            </div>
             
+            <div class="full">
             <label>Escuela / Servicio (Opcional)</label>
             <input type="text" name="school" value="{{ guest.school|default:'' }}" placeholder="Ej. Primaria Rébsamen">
+            </div>
+
+            <div>
+            <label>Género</label>
+            <select name="gender">
+                <option value="" {% if not guest.gender %}selected{% endif %}>Sin especificar</option>
+                <option value="M" {% if guest.gender == 'M' %}selected{% endif %}>Hombre</option>
+                <option value="F" {% if guest.gender == 'F' %}selected{% endif %}>Mujer</option>
+                <option value="O" {% if guest.gender == 'O' %}selected{% endif %}>Otro</option>
+            </select>
+            </div>
+
+            <div>
+            {% if not guest.parent %}
+            <label>Total Pagado del Grupo</label>
+            <input type="number" id="group-amount-input" name="group_amount_paid" value="{{ group_amount_paid|floatformat:2 }}" min="0" step="0.01">
+            <p class="mini-note">Se reparte entre los pases. Puedes ajustar el monto individual de cada acompañante abajo.</p>
+            {% else %}
+            <label>Monto de este pase</label>
+            <input type="number" name="amount_paid" value="{{ guest.amount_paid|floatformat:2 }}" min="0" step="0.01">
+            {% endif %}
+            </div>
+            </div>
+
+            {% if not guest.parent %}
+            <div id="companions-container"></div>
+            {% endif %}
             
-            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
-                <button type="submit" class="btn btn-success" style="flex: 1;">Guardar Cambios</button>
-                <a href="{% url 'dashboard' %}" class="btn" style="flex: 1; text-align: center; background: rgba(255,255,255,0.1);">Cancelar</a>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-success">Guardar Cambios</button>
+                <a href="{% url 'dashboard' %}" class="btn btn-secondary">Cancelar</a>
             </div>
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const passesInput = document.getElementById('passes-input');
+        const groupAmountInput = document.getElementById('group-amount-input');
+        const companionsContainer = document.getElementById('companions-container');
+        const roleOptions = `{% for r in roles %}<option value="{{ r.name|escapejs }}">{{ r.name|escapejs }}</option>{% endfor %}`;
+        const existingCompanions = [
+            {% for companion in companions %}
+            {
+                name: "{{ companion.name|escapejs }}",
+                email: "{{ companion.email|default:''|escapejs }}",
+                phone: "{{ companion.phone|default:''|escapejs }}",
+                role: "{{ companion.role.name|default:''|escapejs }}",
+                school: "{{ companion.school|default:''|escapejs }}",
+                gender: "{{ companion.gender|default:''|escapejs }}",
+                amount_paid: "{{ companion.amount_paid|floatformat:2 }}"
+            }{% if not forloop.last %},{% endif %}
+            {% endfor %}
+        ];
+
+        function optionSelected(options, value) {
+            return options.replace(`value="${value}"`, `value="${value}" selected`);
+        }
+
+        function splitAmount(total, passes) {
+            const cents = Math.round((Number(total) || 0) * 100);
+            const base = Math.floor(cents / passes);
+            const remainder = cents % passes;
+            return Array.from({ length: passes }, (_, index) => ((base + (index < remainder ? 1 : 0)) / 100).toFixed(2));
+        }
+
+        function renderCompanionFields() {
+            if (!passesInput || !companionsContainer) return;
+            const passes = Math.max(parseInt(passesInput.value || '1', 10), 1);
+            const amounts = splitAmount(groupAmountInput ? groupAmountInput.value : 0, passes);
+            companionsContainer.innerHTML = '';
+            const holderAmount = document.createElement('input');
+            holderAmount.type = 'hidden';
+            holderAmount.name = 'amount_paid';
+            holderAmount.value = amounts[0] || '0.00';
+            companionsContainer.appendChild(holderAmount);
+            if (passes <= 1) return;
+            const title = document.createElement('h3');
+            title.textContent = 'Datos de acompañantes';
+            title.style.marginTop = '1rem';
+            companionsContainer.appendChild(title);
+            const note = document.createElement('p');
+            note.className = 'mini-note';
+            note.textContent = 'Nombre para identificar cada pase. Correo, teléfono y servicio se toman del titular.';
+            companionsContainer.appendChild(note);
+            for (let i = 1; i < passes; i++) {
+                const current = existingCompanions[i - 1] || {};
+                const section = document.createElement('div');
+                section.className = 'companion-card';
+                const amountValue = current.amount_paid || amounts[i] || '0.00';
+                section.innerHTML = `
+                    <h4>Acompañante ${i}</h4>
+                    <label>Acompañante ${i} - Nombre</label>
+                    <input type="text" name="companion_${i}_name" value="${current.name || ''}" placeholder="Invitado ${i} del titular">
+                    <label>Rol / Etiqueta</label>
+                    <select name="companion_${i}_role">${optionSelected(roleOptions, current.role || '')}</select>
+                    <label>Monto de este pase</label>
+                    <input type="number" name="companion_${i}_amount_paid" value="${amountValue}" min="0" step="0.01">
+                `;
+                companionsContainer.appendChild(section);
+            }
+        }
+
+        if (passesInput) {
+            passesInput.addEventListener('input', renderCompanionFields);
+            if (groupAmountInput) {
+                groupAmountInput.addEventListener('input', renderCompanionFields);
+            }
+            renderCompanionFields();
+        }
+    });
+</script>
 {% endblock %}

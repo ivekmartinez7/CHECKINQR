@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    .report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+    .metric { padding: 1.25rem; }
+    .metric strong { display: block; font-size: 2rem; color: var(--accent); }
+    .report-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .chart-box { min-height: 300px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 0.75rem; border-bottom: 1px solid var(--glass-border); text-align: left; }
+    th { color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; }
+    @media (max-width: 900px) { .report-layout { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem;">
+    <h1 style="margin: 0;">Reporte Ejecutivo</h1>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <form method="GET" style="display: flex; gap: 0.5rem; align-items: center;">
+            <select name="gender" style="margin: 0; width: auto;">
+                <option value="">Todos</option>
+                <option value="M" {% if filters.gender == 'M' %}selected{% endif %}>Hombres</option>
+                <option value="F" {% if filters.gender == 'F' %}selected{% endif %}>Mujeres</option>
+                <option value="O" {% if filters.gender == 'O' %}selected{% endif %}>Otro</option>
+            </select>
+            <button class="btn" type="submit">Filtrar</button>
+        </form>
+        <a class="btn" href="/report/executive.json{% if filters.gender %}?gender={{ filters.gender }}{% endif %}" style="background:#10b981;">JSON para LLM</a>
+    </div>
+</div>
+
+<div class="report-grid">
+    <div class="glass-panel metric"><strong>{{ summary.total }}</strong>Registros</div>
+    <div class="glass-panel metric"><strong>{{ summary.attendance_rate }}%</strong>Asistencia</div>
+    <div class="glass-panel metric"><strong>${{ summary.total_paid|floatformat:2 }}</strong>Corte total</div>
+    <div class="glass-panel metric"><strong>{{ summary.holders_count }} / {{ summary.companions_count }}</strong>Titulares / Invitados</div>
+</div>
+
+<div class="glass-panel" style="margin-bottom: 1rem;">
+    <h2>Análisis breve</h2>
+    {% for item in analysis %}
+    <p style="color: var(--text-muted);">{{ item }}</p>
+    {% endfor %}
+</div>
+
+<div class="report-layout">
+    <div class="glass-panel chart-box">
+        <h2>Asistencia</h2>
+        <canvas id="attendanceChart"></canvas>
+    </div>
+    <div class="glass-panel chart-box">
+        <h2>Caja</h2>
+        <canvas id="cashChart"></canvas>
+    </div>
+</div>
+
+<div class="report-layout" style="margin-top: 1rem;">
+    <div class="glass-panel">
+        <h2>Por Escuela / Servicio</h2>
+        <table>
+            <thead><tr><th>Escuela/Servicio</th><th>Total</th><th>Asistió</th><th>Monto</th></tr></thead>
+            <tbody>
+                {% for row in schools %}
+                <tr><td>{{ row.school|default:"Sin dato" }}</td><td>{{ row.total }}</td><td>{{ row.checked_in }}</td><td>${{ row.amount|floatformat:2 }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="glass-panel">
+        <h2>Por Rol / Etiqueta</h2>
+        <table>
+            <thead><tr><th>Rol</th><th>Total</th><th>Asistió</th><th>Monto</th></tr></thead>
+            <tbody>
+                {% for row in roles %}
+                <tr><td>{{ row.role__name|default:"Sin rol" }}</td><td>{{ row.total }}</td><td>{{ row.checked_in }}</td><td>${{ row.amount|floatformat:2 }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="glass-panel" style="margin-top: 1rem;">
+    <h2>Encuesta de satisfacción</h2>
+    <table>
+        <thead><tr><th>Pregunta</th><th>Tipo</th><th>Promedio</th><th>Respuestas</th></tr></thead>
+        <tbody>
+            {% for row in survey %}
+            <tr><td>{{ row.text }}</td><td>{{ row.question_type }}</td><td>{{ row.avg_rating }}</td><td>{{ row.responses_count }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        new Chart(document.getElementById('attendanceChart'), {
+            type: 'bar',
+            data: {
+                labels: ['Asistieron', 'Pendientes'],
+                datasets: [{ data: [{{ summary.checked_in }}, {{ summary.pending }}], backgroundColor: ['#10b981', '#ef4444'] }]
+            },
+            options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+        new Chart(document.getElementById('cashChart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Titulares', 'Invitados'],
+                datasets: [{ data: [{{ summary.holders_paid }}, {{ summary.companions_paid }}], backgroundColor: ['#6366f1', '#f59e0b'] }]
+            },
+            options: { plugins: { legend: { labels: { color: '#94a3b8' } } } }
+        });
+    });
+</script>
+{% endblock %}

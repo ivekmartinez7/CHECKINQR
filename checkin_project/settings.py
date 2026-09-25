@@ -28,8 +28,9 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-u=4(%f@os3%%-w8(o=ls_v**+c
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 't')
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'checkinparty.systemsivek.win', 'checkinqr_web']
-CSRF_TRUSTED_ORIGINS = ['https://*.trycloudflare.com', 'https://*.systemsivek.win']
+ALLOWED_HOSTS = ['*']
+CSRF_TRUSTED_ORIGINS = ['https://*.trycloudflare.com', 'https://*.systemsivek.win', 'https://*']
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -38,6 +39,7 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL', 'https://checkinparty.systemsivek.win')
 
 # Application definition
 

@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% if messages %}
+<div style="margin-bottom: 1rem;">
+    {% for message in messages %}
+    <div style="padding: 1rem; border-radius: 8px; background: rgba(16, 185, 129, 0.2); border-left: 4px solid #10b981;">{{ message }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="glass-panel" style="margin-bottom: 1rem;">
+    <h2>Planilla CRUD de Encuesta</h2>
+    <form method="POST">
+        {% csrf_token %}
+        <input type="hidden" name="is_active" value="1">
+        <label>Pregunta</label>
+        <input type="text" name="text" required placeholder="Ej. ¿Qué mejorarías para el próximo año?">
+        <label>Tipo</label>
+        <select name="question_type">
+            <option value="rating">Calificación 1-5</option>
+            <option value="text">Respuesta abierta</option>
+            <option value="yes_no">Sí/No</option>
+        </select>
+        <label>Orden</label>
+        <input type="number" name="order" value="0" min="0">
+        <button type="submit" class="btn">Agregar pregunta</button>
+    </form>
+</div>
+
+<div class="glass-panel">
+    <h2>Preguntas</h2>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; padding:0.75rem;">Orden</th>
+                    <th style="text-align:left; padding:0.75rem;">Pregunta</th>
+                    <th style="text-align:left; padding:0.75rem;">Tipo</th>
+                    <th style="text-align:left; padding:0.75rem;">Activa</th>
+                    <th style="text-align:left; padding:0.75rem;">Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for question in questions %}
+                <tr>
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="question_id" value="{{ question.id }}">
+                        <td style="padding:0.75rem;"><input type="number" name="order" value="{{ question.order }}" style="margin:0; min-width:80px;"></td>
+                        <td style="padding:0.75rem;"><input type="text" name="text" value="{{ question.text }}" style="margin:0; min-width:260px;"></td>
+                        <td style="padding:0.75rem;">
+                            <select name="question_type" style="margin:0; min-width:160px;">
+                                <option value="rating" {% if question.question_type == 'rating' %}selected{% endif %}>Calificación 1-5</option>
+                                <option value="text" {% if question.question_type == 'text' %}selected{% endif %}>Respuesta abierta</option>
+                                <option value="yes_no" {% if question.question_type == 'yes_no' %}selected{% endif %}>Sí/No</option>
+                            </select>
+                        </td>
+                        <td style="padding:0.75rem;">
+                            <select name="is_active" style="margin:0; min-width:100px;">
+                                <option value="1" {% if question.is_active %}selected{% endif %}>Sí</option>
+                                <option value="0" {% if not question.is_active %}selected{% endif %}>No</option>
+                            </select>
+                        </td>
+                        <td style="padding:0.75rem; white-space:nowrap;">
+                            <button class="btn" type="submit" style="padding:0.5rem 0.75rem;">Guardar</button>
+                            <button class="btn" type="submit" name="action" value="delete" style="padding:0.5rem 0.75rem; background:var(--danger);" onclick="return confirm('¿Eliminar pregunta?');">Eliminar</button>
+                        </td>
+                    </form>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

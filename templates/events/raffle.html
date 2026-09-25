@@ -1,0 +1,328 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    .raffle-page-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 80vh;
+        text-align: center;
+        padding: 1rem;
+    }
+    
+    .raffle-title {
+        font-size: 3rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #fff 0%, var(--accent) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 2rem;
+        text-shadow: 0 4px 10px rgba(251, 191, 36, 0.2);
+    }
+    
+    .raffle-board {
+        width: 100%;
+        max-width: 700px;
+        background: rgba(17, 24, 39, 0.7);
+        border: 2px solid var(--glass-border);
+        border-radius: 24px;
+        padding: 3rem 2rem;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 2rem;
+    }
+    
+    /* Slot machine drum */
+    .slot-machine-container {
+        height: 150px;
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+        margin: 2rem 0;
+    }
+    
+    .drum-strip {
+        position: absolute;
+        top: 0;
+        display: flex;
+        flex-direction: column;
+        transition: top 0s ease;
+    }
+    
+    .drum-item {
+        height: 150px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        width: 600px;
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: white;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    
+    .winner-display {
+        display: none;
+        animation: scaleIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+    
+    @keyframes scaleIn {
+        from { transform: scale(0.6); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+    }
+    
+    .winner-name {
+        font-size: 3.5rem;
+        font-weight: 800;
+        color: white;
+        margin-bottom: 0.5rem;
+        line-height: 1.2;
+    }
+    
+    .winner-details {
+        font-size: 1.5rem;
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
+    }
+    
+    .winner-number {
+        font-size: 5rem;
+        font-weight: 900;
+        color: var(--accent);
+        text-shadow: 0 0 30px rgba(251, 191, 36, 0.6);
+        margin: 1rem 0;
+        animation: pulseGolden 1.5s infinite alternate;
+    }
+    
+    @keyframes pulseGolden {
+        from { transform: scale(1); filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.3)); }
+        to { transform: scale(1.05); filter: drop-shadow(0 0 25px rgba(251, 191, 36, 0.8)); }
+    }
+    
+    .btn-draw {
+        font-size: 1.8rem;
+        padding: 1.2rem 3rem;
+        background: linear-gradient(135deg, var(--accent) 0%, #d97706 100%);
+        border: none;
+        border-radius: 50px;
+        color: #1e1b4b;
+        font-weight: 800;
+        cursor: pointer;
+        box-shadow: 0 5px 25px rgba(251, 191, 36, 0.4);
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-draw:hover {
+        transform: translateY(-4px) scale(1.05);
+        box-shadow: 0 8px 30px rgba(251, 191, 36, 0.6);
+    }
+    .btn-draw:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    
+    .empty-state {
+        color: var(--text-muted);
+        font-size: 1.5rem;
+        padding: 3rem 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="raffle-page-container">
+    <div style="width: 100%; max-width: 700px; text-align: left; margin-bottom: 1rem;">
+        <a href="{% url 'dashboard' %}" class="btn" style="background: rgba(255,255,255,0.1); color: var(--text); border: 1px solid var(--glass-border);">
+            ← Regresar
+        </a>
+    </div>
+
+    <h1 class="raffle-title">✨ Sorteo de Asistencia en Vivo ✨</h1>
+
+    <div class="raffle-board">
+        <!-- Initial/Spin State -->
+        <div id="spin-state">
+            <p style="font-size: 1.2rem; color: var(--text-muted);">Participan exclusivamente los invitados registrados que ya hayan ingresado al evento.</p>
+            
+            <div class="slot-machine-container">
+                <div id="drum-strip" class="drum-strip">
+                    <div class="drum-item">¿Quién será el ganador?</div>
+                </div>
+            </div>
+            
+            <button id="draw-btn" class="btn-draw" onclick="startDraw()">¡SORTEAR!</button>
+        </div>
+        
+        <!-- Winner State -->
+        <div id="winner-state" class="winner-display">
+            <h3 style="color: var(--accent); letter-spacing: 2px; font-weight: 700; margin-bottom: 1rem;">🏆 ¡TENEMOS UN GANADOR! 🏆</h3>
+            <div id="winner-number" class="winner-number">#00</div>
+            <div id="winner-name" class="winner-name">Nombre Apellido</div>
+            <div id="winner-details" class="winner-details">Rol | Escuela</div>
+            
+            <button class="btn" style="margin-top: 1.5rem; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border);" onclick="resetRaffle()">
+                Sortear de Nuevo
+            </button>
+        </div>
+        
+        <div id="empty-state" class="empty-state" style="display: none;">
+            ⚠️ No hay candidatos válidos todavía. Los invitados deben registrar su entrada (asistencia) para calificar en el sorteo.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let candidates = [];
+    const drumItemHeight = 150;
+    
+    // Web Audio context for sounds
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    function playSound(freq, type, duration, delay = 0) {
+        setTimeout(() => {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }, delay);
+    }
+
+    function playTick() {
+        playSound(600, 'sine', 0.05);
+    }
+
+    function playWinSound() {
+        // Triumphant fanfare
+        playSound(523.25, 'triangle', 0.15, 0);   // C5
+        playSound(659.25, 'triangle', 0.15, 150); // E5
+        playSound(783.99, 'triangle', 0.15, 300); // G5
+        playSound(1046.50, 'sine', 0.5, 450);    // C6
+    }
+
+    function fetchCandidates() {
+        return fetch('{% url "raffle" %}', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                candidates = data.candidates;
+                return candidates;
+            }
+            return [];
+        });
+    }
+
+    function startDraw() {
+        const drawBtn = document.getElementById('draw-btn');
+        drawBtn.disabled = true;
+        
+        fetchCandidates().then(list => {
+            if (list.length === 0) {
+                document.getElementById('spin-state').style.display = 'none';
+                document.getElementById('empty-state').style.display = 'block';
+                drawBtn.disabled = false;
+                return;
+            }
+            
+            // Build the strip items
+            const strip = document.getElementById('drum-strip');
+            strip.innerHTML = '';
+            strip.style.transition = 'none';
+            strip.style.top = '0px';
+            
+            // Create a randomized array of items for scrolling
+            let scrollList = [];
+            // Duplicate candidates to ensure long spin animation
+            for (let i = 0; i < 6; i++) {
+                scrollList = scrollList.concat(list.sort(() => 0.5 - Math.random()));
+            }
+            
+            // Select the winner (it will be the final item of the scrollList)
+            const winner = list[Math.floor(Math.random() * list.length)];
+            scrollList.push(winner);
+            
+            // Append elements to strip
+            scrollList.forEach(c => {
+                const item = document.createElement('div');
+                item.className = 'drum-item';
+                item.innerText = c.name;
+                strip.appendChild(item);
+            });
+            
+            // Trigger animation
+            const totalItems = scrollList.length;
+            const targetTop = -((totalItems - 1) * drumItemHeight);
+            
+            // We animate the slot machine rolling
+            setTimeout(() => {
+                strip.style.transition = `top 5s cubic-bezier(0.1, 0.8, 0.2, 1)`;
+                strip.style.top = `${targetTop}px`;
+                
+                // Play ticks during spin (gradually slowing down)
+                let tickDelay = 0;
+                for (let i = 0; i < totalItems; i++) {
+                    const progress = i / totalItems;
+                    tickDelay += 100 + (progress * progress * 350); // slow down curve
+                    if (tickDelay < 4800) {
+                        setTimeout(playTick, tickDelay);
+                    }
+                }
+            }, 50);
+            
+            // Animation finished
+            setTimeout(() => {
+                playWinSound();
+                showWinner(winner);
+            }, 5200);
+        });
+    }
+
+    function showWinner(winner) {
+        document.getElementById('spin-state').style.display = 'none';
+        
+        const winState = document.getElementById('winner-state');
+        winState.style.display = 'block';
+        
+        document.getElementById('winner-name').innerText = winner.name;
+        document.getElementById('winner-number').innerText = '#' + winner.raffle_number;
+        document.getElementById('winner-details').innerText = `${winner.role} | ${winner.school || 'N/A'}`;
+    }
+
+    function resetRaffle() {
+        document.getElementById('winner-state').style.display = 'none';
+        document.getElementById('spin-state').style.display = 'block';
+        
+        const strip = document.getElementById('drum-strip');
+        strip.innerHTML = '<div class="drum-item">¿Quién será el ganador?</div>';
+        strip.style.transition = 'none';
+        strip.style.top = '0px';
+        
+        document.getElementById('draw-btn').disabled = false;
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div style="max-width: 720px; margin: 0 auto;">
+    <div class="glass-panel">
+        <h2>Encuesta de satisfacción</h2>
+        <p style="color: var(--text-muted);">Registro: {{ guest.name }}{% if guest.school %} · {{ guest.school }}{% endif %}</p>
+        <form method="POST">
+            {% csrf_token %}
+            {% for question in questions %}
+            <label>{{ question.text }}</label>
+            {% if question.question_type == 'rating' %}
+            <select name="question_{{ question.id }}" required>
+                <option value="">Selecciona una calificación</option>
+                <option value="5">5 - Excelente</option>
+                <option value="4">4 - Bueno</option>
+                <option value="3">3 - Regular</option>
+                <option value="2">2 - Malo</option>
+                <option value="1">1 - Muy malo</option>
+            </select>
+            {% elif question.question_type == 'yes_no' %}
+            <select name="question_{{ question.id }}" required>
+                <option value="">Selecciona</option>
+                <option value="Sí">Sí</option>
+                <option value="No">No</option>
+            </select>
+            {% else %}
+            <textarea name="question_{{ question.id }}" rows="4" placeholder="Escribe tu respuesta"></textarea>
+            {% endif %}
+            {% endfor %}
+            <button class="btn btn-success" type="submit" style="width: 100%;">Enviar encuesta</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

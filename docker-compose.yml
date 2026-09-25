@@ -32,10 +32,23 @@ services:
       - DB_PORT=5432
       - EMAIL_HOST_USER=${EMAIL_HOST_USER}
       - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://checkinparty.systemsivek.win}
       - SECRET_KEY=${SECRET_KEY}
       - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
     depends_on:
       - db
+
+  nginx:
+    build: ./nginx
+    container_name: checkinqr_nginx
+    restart: always
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - .:/app
+    depends_on:
+      - web
 
 volumes:
   postgres_data:
