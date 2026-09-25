@@ -6,20 +6,23 @@ import socket
 import logging
 import json
 import re
+from functools import wraps
 from decimal import Decimal
 from io import BytesIO
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.core import signing
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from email.mime.image import MIMEImage
 from django.conf import settings
 from django.contrib import messages
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.contrib.auth.models import User
 from django.db.models import Count, Sum, Avg, Q
 from .models import Guest, GuestRole, ChatMessage, SatisfactionQuestion, SatisfactionResponse
@@ -68,6 +71,47 @@ def get_group_holder(guest):
 
 def get_group_members(holder):
     return [holder, *list(holder.companions.select_related('role').order_by('id'))]
+
+
+def mark_guest_checked_in(guest):
+    """Only the request that changes the row may report a first arrival."""
+    updated = Guest.objects.filter(pk=guest.pk, is_checked_in=False).update(
+        is_checked_in=True, checked_in_at=timezone.now()
+    )
+    guest.refresh_from_db(fields=['is_checked_in', 'checked_in_at'])
+    return not bool(updated)
+
+
+def checkin_staff_required(view):
+    @login_required
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not (request.user.is_staff or request.user.is_superuser):
+            if request.path.startswith('/api/'):
+                return JsonResponse({'success': False, 'message': 'Solo personal autorizado.'}, status=403)
+            return HttpResponseForbidden('Solo personal autorizado.')
+        return view(request, *args, **kwargs)
+    return wrapped
+
+
+def valid_dynamic_token(uuid, token):
+    return any(
+        hmac.compare_digest(generate_dynamic_token(str(uuid), time_offset=offset), token)
+        for offset in (0, -1, 1)
+    )
+
+
+def confirmation_token(request, uuid):
+    return signing.dumps({'user': request.user.pk, 'uuid': str(uuid)}, salt='checkin-confirm')
+
+
+def valid_confirmation_token(request, uuid):
+    try:
+        payload = signing.loads(request.POST.get('confirmation_token', ''),
+                                salt='checkin-confirm', max_age=300)
+    except signing.BadSignature:
+        return False
+    return payload == {'user': request.user.pk, 'uuid': str(uuid)}
 
 
 def split_group_payment(total_amount, passes):
@@ -325,7 +369,7 @@ def reset_checkin(request, pk):
     return redirect('dashboard')
 
 
-@login_required
+@checkin_staff_required
 def manual_check_in(request, pk):
     if request.method != 'POST':
         return redirect('dashboard')
@@ -333,19 +377,18 @@ def manual_check_in(request, pk):
     guest = get_object_or_404(Guest.objects.select_related('role', 'parent'), pk=pk)
     password = request.POST.get('staff_password') or ''
     next_url = request.POST.get('next') or 'dashboard'
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()},
+                                           require_https=request.is_secure()):
+        next_url = 'dashboard'
 
     confirmed_user = authenticate(request, username=request.user.username, password=password)
     if confirmed_user is None:
         messages.error(request, "Contraseña de staff incorrecta. No se registró el check-in manual.")
         return redirect(next_url)
 
-    if guest.is_checked_in:
+    if mark_guest_checked_in(guest):
         messages.warning(request, f"{guest.name} ya estaba marcado como asistente.")
         return redirect(next_url)
-
-    guest.is_checked_in = True
-    guest.checked_in_at = timezone.now()
-    guest.save(update_fields=['is_checked_in', 'checked_in_at'])
     messages.success(request, f"Check-in manual registrado para {guest.name} después de validar identidad.")
     return redirect(next_url)
 
@@ -398,13 +441,11 @@ def guest_ticket(request, uuid):
     })
 
 
-@login_required
+@checkin_staff_required
 def group_check_in(request, uuid, token):
     holder = get_object_or_404(Guest.objects.select_related('role'), uuid=uuid, parent__isnull=True)
-    is_valid = request.method == 'POST' or any(
-        hmac.compare_digest(generate_dynamic_token(str(uuid), time_offset=offset), token)
-        for offset in [0, -1, 1]
-    )
+    is_valid = (valid_confirmation_token(request, uuid) if request.method == 'POST'
+                else valid_dynamic_token(uuid, token))
     if not is_valid:
         return render(request, 'events/group_checkin.html', {
             'success': False,
@@ -415,11 +456,8 @@ def group_check_in(request, uuid, token):
         guest_id = request.POST.get('guest_id')
         member = get_object_or_404(Guest, pk=guest_id)
         if member.pk == holder.pk or member.parent_id == holder.pk:
-            already_checked = member.is_checked_in
+            already_checked = mark_guest_checked_in(member)
             if not already_checked:
-                member.is_checked_in = True
-                member.checked_in_at = timezone.now()
-                member.save(update_fields=['is_checked_in', 'checked_in_at'])
                 messages.success(request, f"Check-in registrado para {member.name}.")
             else:
                 messages.warning(request, f"{member.name} ya estaba marcado como asistente.")
@@ -436,10 +474,11 @@ def group_check_in(request, uuid, token):
         'checked_count': checked_count,
         'group_size': len(members),
         'token': token,
+        'confirmation_token': confirmation_token(request, uuid),
         **event_location_context(),
     })
 
-@login_required
+@checkin_staff_required
 def scanner(request):
     query = (request.GET.get('q') or '').strip()
     manual_results = []
@@ -460,7 +499,7 @@ def scanner(request):
         'manual_results': manual_results,
     })
 
-@csrf_exempt
+@checkin_staff_required
 def api_check_in(request):
     # Backward compatible static endpoint
     if request.method == 'POST':
@@ -470,11 +509,7 @@ def api_check_in(request):
             
         try:
             guest = Guest.objects.get(uuid=uuid_val)
-            already_checked = guest.is_checked_in
-            if not already_checked:
-                guest.is_checked_in = True
-                guest.checked_in_at = timezone.now()
-                guest.save()
+            already_checked = mark_guest_checked_in(guest)
                 
             return JsonResponse({
                 'success': True,
@@ -493,15 +528,11 @@ def api_check_in(request):
             
     return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt
+@checkin_staff_required
 def api_check_in_dynamic(request, uuid, token):
     # Verify token on the current window (+/- 1 time window of 10s)
-    is_valid = False
-    for offset in [0, -1, 1]:
-        computed = generate_dynamic_token(str(uuid), time_offset=offset)
-        if hmac.compare_digest(computed, token):
-            is_valid = True
-            break
+    is_valid = (valid_dynamic_token(uuid, token) or
+                (request.method == 'POST' and valid_confirmation_token(request, uuid)))
             
     if not is_valid:
         if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.method == 'POST':
@@ -511,17 +542,16 @@ def api_check_in_dynamic(request, uuid, token):
     try:
         guest = Guest.objects.get(uuid=uuid)
         
-        # Enforce checkin permissions if logged in
-        if not request.user.is_authenticated:
-            # If hit directly via browser, redirect to login or require authentication
-            if request.method == 'GET':
-                return redirect(f"{settings.LOGIN_URL}?next={request.path}")
-                
-        already_checked = guest.is_checked_in
-        if not already_checked:
-            guest.is_checked_in = True
-            guest.checked_in_at = timezone.now()
-            guest.save()
+        if request.method == 'GET':
+            return render(request, 'events/scan_result.html', {
+                'success': True,
+                'confirm': True,
+                'guest': guest,
+                'confirmation_token': confirmation_token(request, uuid),
+            })
+        if request.method != 'POST':
+            return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
+        already_checked = mark_guest_checked_in(guest)
             
         guest_data = {
             'name': guest.name,
@@ -531,7 +561,7 @@ def api_check_in_dynamic(request, uuid, token):
             'guest_type': guest.get_guest_type_display(),
         }
         
-        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.method == 'POST':
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
             return JsonResponse({
                 'success': True,
                 'already_checked': already_checked,
@@ -1221,7 +1251,7 @@ def mobile_sync(request):
 
 
 @csrf_exempt
-@login_required
+@checkin_staff_required
 def mobile_check_in(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'message': 'Method not allowed'}, status=405)
@@ -1231,11 +1261,7 @@ def mobile_check_in(request):
     if not guest_uuid:
         return JsonResponse({'success': False, 'message': 'Código QR vacío.'}, status=400)
     if token:
-        is_valid = any(
-            hmac.compare_digest(generate_dynamic_token(str(guest_uuid), time_offset=offset), token)
-            for offset in [0, -1, 1]
-        )
-        if not is_valid:
+        if not valid_dynamic_token(guest_uuid, token):
             return JsonResponse({'success': False, 'message': 'Código QR expirado o inválido.'}, status=400)
     try:
         guest = Guest.objects.select_related('role', 'parent').get(uuid=guest_uuid)
@@ -1254,11 +1280,7 @@ def mobile_check_in(request):
             'summary': mobile_summary_data(),
         })
 
-    already_checked = guest.is_checked_in
-    if not already_checked:
-        guest.is_checked_in = True
-        guest.checked_in_at = timezone.now()
-        guest.save(update_fields=['is_checked_in', 'checked_in_at'])
+    already_checked = mark_guest_checked_in(guest)
     return JsonResponse({
         'success': True,
         'already_checked': already_checked,

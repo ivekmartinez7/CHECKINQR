@@ -1,8 +1,9 @@
 import uuid
 import random
 from django.db import models
-from django.core.exceptions import ValidationError
 from django.conf import settings
+from django.db import IntegrityError, transaction
+from django.db.models import Max
 
 class GuestRole(models.Model):
     name = models.CharField(max_length=100, unique=True, verbose_name="Nombre del Rol")
@@ -52,13 +53,24 @@ class Guest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
-        if not self.raffle_number:
-            assigned_numbers = set(Guest.objects.values_list('raffle_number', flat=True))
-            available_numbers = list(set(range(1, 101)) - assigned_numbers)
-            if not available_numbers:
-                raise ValidationError("Ya no hay números de rifa disponibles del 1 al 100.")
-            self.raffle_number = random.choice(available_numbers)
-        super().save(*args, **kwargs)
+        if self.raffle_number is not None:
+            return super().save(*args, **kwargs)
+
+        # Keep the existing random 1–100 tickets, then continue past 100.
+        # A unique constraint plus a fresh transaction handles competing inserts.
+        for attempt in range(10):
+            assigned = set(Guest.objects.filter(raffle_number__lte=100)
+                           .values_list('raffle_number', flat=True))
+            available = list(set(range(1, 101)) - assigned)
+            self.raffle_number = (random.choice(available) if available else
+                                  (Guest.objects.aggregate(Max('raffle_number'))['raffle_number__max'] or 100) + 1)
+            try:
+                with transaction.atomic():
+                    return super().save(*args, **kwargs)
+            except IntegrityError:
+                self.raffle_number = None
+                if attempt == 9:
+                    raise
 
     def __str__(self):
         role_name = self.role.name if self.role else "Sin Rol"

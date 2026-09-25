@@ -60,7 +60,18 @@
 
 {% block content %}
 <div class="result-container">
-    {% if success %}
+    {% if confirm %}
+        <div class="glass-panel status-card">
+            <h1>Confirmar llegada</h1>
+            <p>{{ guest.name }} · Rifa #{{ guest.raffle_number }}</p>
+            {% if guest.is_checked_in %}<p>Este pase ya registró su entrada.</p>{% endif %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="confirmation_token" value="{{ confirmation_token }}">
+                <button type="submit" class="btn">{% if guest.is_checked_in %}Verificar entrada{% else %}Marcar entrada{% endif %}</button>
+            </form>
+        </div>
+    {% elif success %}
         {% if already_checked %}
             <div class="glass-panel status-card status-warning">
                 <span class="status-icon">⚠️</span>
