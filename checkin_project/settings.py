@@ -13,33 +13,67 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
+from urllib.parse import parse_qs, unquote, urlsplit
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / '.env')
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+IS_RENDER = os.getenv('RENDER', '').lower() == 'true'
+DEBUG = not IS_RENDER and os.getenv('DJANGO_DEBUG', '').lower() in ('true', '1', 't')
+SECRET_KEY = os.getenv('SECRET_KEY', '')
+if IS_RENDER and len(SECRET_KEY) < 50:
+    raise ImproperlyConfigured('Configura SECRET_KEY con al menos 50 caracteres aleatorios.')
+if not SECRET_KEY:
+    # Only used by local development and isolated tests.
+    SECRET_KEY = 'django-insecure-local-checkinqr-test-key-not-for-public-deploys'
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-u=4(%f@os3%%-w8(o=ls_v**+c!dccxva)(n9yrtoa7jy4ex*b')
+def env_list(name):
+    return [value.strip() for value in os.getenv(name, '').split(',') if value.strip()]
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 't')
+render_url = os.getenv('RENDER_EXTERNAL_URL', '')
+PUBLIC_BASE_URL = (os.getenv('PUBLIC_BASE_URL') or render_url or
+                   ('http://localhost:8000' if DEBUG else 'https://checkinparty.systemsivek.win')).rstrip('/')
+public_url = urlsplit(PUBLIC_BASE_URL)
+if (public_url.scheme not in (('https',) if IS_RENDER else ('http', 'https'))
+        or not public_url.hostname or public_url.username or public_url.path
+        or public_url.query or public_url.fragment):
+    raise ImproperlyConfigured('PUBLIC_BASE_URL debe ser el origen del sitio, sin ruta ni credenciales.')
 
-ALLOWED_HOSTS = ['*']
-CSRF_TRUSTED_ORIGINS = ['https://*.trycloudflare.com', 'https://*.systemsivek.win', 'https://*']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]', public_url.hostname, *env_list('DJANGO_ALLOWED_HOSTS')]
+if render_url:
+    ALLOWED_HOSTS.append(urlsplit(render_url).hostname)
+
+CSRF_TRUSTED_ORIGINS = [PUBLIC_BASE_URL, *env_list('DJANGO_CSRF_TRUSTED_ORIGINS')]
+if render_url:
+    CSRF_TRUSTED_ORIGINS.append(render_url.rstrip('/'))
+
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = IS_RENDER
+# Render probes the internal HTTP port. This endpoint exposes only status.
+SECURE_REDIRECT_EXEMPT = [r'^healthz$']
+SECURE_HSTS_SECONDS = 31536000 if IS_RENDER else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = IS_RENDER
+SECURE_HSTS_PRELOAD = IS_RENDER
+SECURE_REFERRER_POLICY = 'same-origin'
+SESSION_COOKIE_SECURE = IS_RENDER
+CSRF_COOKIE_SECURE = IS_RENDER
+X_FRAME_OPTIONS = 'DENY'
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
+CHAT_AUDIO_ENABLED = not IS_RENDER
+EMAIL_TIMEOUT = 8
 
-# Email Configuration
+# Email configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL', 'https://checkinparty.systemsivek.win')
+
 
 # Application definition
 
@@ -55,6 +89,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -83,29 +118,44 @@ TEMPLATES = [
 WSGI_APPLICATION = 'checkin_project.wsgi.application'
 
 
-import os
-
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-if os.getenv('DB_ENGINE') == 'postgresql':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('DB_NAME', 'checkindb'),
-            'USER': os.getenv('DB_USER', 'postgres'),
-            'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),
-            'HOST': os.getenv('DB_HOST', 'db'),
-            'PORT': os.getenv('DB_PORT', '5432'),
-        }
-    }
+database_url = os.getenv('DATABASE_URL')
+if database_url:
+    db = urlsplit(database_url)
+    if db.scheme not in ('postgres', 'postgresql') or not db.hostname or not db.path.strip('/'):
+        raise ImproperlyConfigured('DATABASE_URL debe apuntar a PostgreSQL.')
+    options = {'connect_timeout': 8}
+    if IS_RENDER:
+        options.update(sslmode='verify-full', sslrootcert='/etc/ssl/certs/ca-certificates.crt')
+    elif 'sslmode' in parse_qs(db.query):
+        options['sslmode'] = parse_qs(db.query)['sslmode'][0]
+    DATABASES = {'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': unquote(db.path[1:]),
+        'USER': unquote(db.username or ''),
+        'PASSWORD': unquote(db.password or ''),
+        'HOST': db.hostname,
+        'PORT': db.port or 5432,
+        'OPTIONS': options,
+        'CONN_HEALTH_CHECKS': True,
+        'DISABLE_SERVER_SIDE_CURSORS': True,
+    }}
+elif IS_RENDER:
+    raise ImproperlyConfigured('Configura DATABASE_URL antes de iniciar en Render.')
+elif os.getenv('DB_ENGINE') == 'postgresql':
+    DATABASES = {'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME', 'checkindb'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST', 'db'),
+        'PORT': os.getenv('DB_PORT', '5432'),
+    }}
 else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+    DATABASES = {'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }}
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -129,9 +179,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'es-mx'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/Mexico_City'
 
 USE_I18N = True
 
@@ -141,8 +191,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').is_dir() else []
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -155,3 +206,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'login'
+
+EVENT_NAME = os.getenv('EVENT_NAME') or ('Boleto de acceso' if IS_RENDER else 'Día del Maestro')
+EVENT_DATE_LABEL = os.getenv('EVENT_DATE_LABEL') or ('' if IS_RENDER else '18 de junio, 13:00 h')
+EVENT_LOCATION_NAME = os.getenv('EVENT_LOCATION_NAME', '' if IS_RENDER else 'Salón Quinta Tecuanapan')
+EVENT_LOCATION_ADDRESS = os.getenv('EVENT_LOCATION_ADDRESS', '' if IS_RENDER else 'Del Campesino 40, Obrero Campesina, 91020 Xalapa-Enríquez, Ver.')
+EVENT_LOCATION_MAP_URL = os.getenv('EVENT_LOCATION_MAP_URL', '' if IS_RENDER else 'https://www.google.com/maps/search/?api=1&query=Sal%C3%B3n%20Quinta%20Tecuanapan%2C%20Del%20Campesino%2040%2C%20Obrero%20Campesina%2C%2091020%20Xalapa-Enr%C3%ADquez%2C%20Ver.')

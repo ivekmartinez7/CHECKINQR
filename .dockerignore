@@ -9,3 +9,10 @@ venv
 db.sqlite3
 media/
 .env
+datadump.json
+.data_loaded
+*.sqlite3
+*.pdf
+.git
+cloudflared.exe
+staticfiles/

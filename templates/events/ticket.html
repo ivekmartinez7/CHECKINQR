@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boleto Digital - {{ ticket_holder.name }}</title>
+    <title>{{ event_name }} · CheckInQR</title>
+    <meta name="robots" content="noindex, noarchive">
+    <meta name="referrer" content="no-referrer">
+    <meta property="og:title" content="Boleto digital · CheckInQR">
+    <meta property="og:description" content="Abre el boleto y muestra el QR en el acceso.">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -133,16 +137,19 @@
 
         .qr-box {
             background: white;
-            padding: 1rem;
+            padding: 0.8rem;
             border-radius: 16px;
             display: inline-block;
+            width: min(100%, 17rem);
+            box-sizing: border-box;
             margin-bottom: 1.5rem;
             box-shadow: 0 10px 25px rgba(0,0,0,0.3);
         }
 
         .qr-image {
-            width: 200px;
-            height: 200px;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 1;
             display: block;
         }
 
@@ -292,6 +299,10 @@
             letter-spacing: 1px;
             text-transform: uppercase;
         }
+        .qr-caption { margin: .25rem 0; color: #10233b; font-weight: 700; }
+        .qr-state { min-height: 1.4em; margin: 0; font-size: .85rem; color: #475569; }
+        .qr-refresh { margin-top: .45rem; padding: .4rem .75rem; border: 1px solid #cbd5e1; border-radius: .5rem; background: #f8fafc; color: #10233b; font: inherit; cursor: pointer; }
+        .qr-refresh:focus-visible { outline: 3px solid #0f766e; outline-offset: 2px; }
     </style>
 </head>
 <body>
@@ -299,8 +310,8 @@
         <div class="ticket-card">
             <!-- Header -->
             <div class="ticket-header">
-                <p class="event-subtitle">Invitación Oficial</p>
-                <h1 class="event-title">Día del Maestro</h1>
+                <p class="event-subtitle">Boleto digital</p>
+                <h1 class="event-title">{{ event_name }}</h1>
             </div>
 
             <!-- Body -->
@@ -322,14 +333,14 @@
 
                 <br>
 
-                <!-- QR Code Box -->
-                <div class="qr-box" style="position: relative;">
-                    <img id="qr-code" class="qr-image" src="{% url 'qr_code_image' ticket_holder.uuid %}" alt="Código QR de Acceso">
-                    <div id="refresh-bar-container" style="width: 100%; height: 4px; background: rgba(0,0,0,0.1); border-radius: 2px; margin-top: 8px; overflow: hidden; position: relative;">
-                        <div id="refresh-bar" style="width: 100%; height: 100%; background: var(--accent); transition: width 0.1s linear;"></div>
-                    </div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; font-weight: 500;">El QR se actualiza cada 10 segundos</div>
-                </div>
+                {% if group_size > 1 or not ticket_holder.is_checked_in %}
+                <section class="qr-box" aria-label="Pase de acceso">
+                    <p class="qr-caption">Escanear en la entrada</p>
+                    <img id="qr-code" class="qr-image" src="{% url 'qr_code_image' ticket_holder.uuid %}" alt="Código QR de acceso" width="256" height="256">
+                    <p class="qr-state" id="qr-state" role="status" aria-live="polite">QR dinámico</p>
+                    <button type="button" class="qr-refresh" id="qr-refresh" hidden>Actualizar QR</button>
+                </section>
+                {% endif %}
 
                 <p class="passes-count">
                     {% if group_size > 1 %}
@@ -347,7 +358,7 @@
                     <div class="group-member">
                         <div>
                             <div class="group-member-name">{{ member.name }}</div>
-                            <div class="group-member-meta">{{ member.get_guest_type_display }} · {{ member.role.name|default:"Sin Rol" }} · ${{ member.amount_paid|floatformat:2 }}</div>
+                            <div class="group-member-meta">{{ member.get_guest_type_display }} · {{ member.role.name|default:"Sin Rol" }}</div>
                         </div>
                         {% if member.is_checked_in %}
                         <span class="member-status member-checked">Ingresó</span>
@@ -361,14 +372,19 @@
 
                 <!-- Info Grid -->
                 <div class="details-grid">
+                    {% if event_location_name %}
                     <div>
                         <div class="detail-item-title">📍 Lugar</div>
                         <div class="detail-item-value">{{ event_location_name }}</div>
                     </div>
+                    {% endif %}
+                    {% if event_date_label %}
                     <div>
-                        <div class="detail-item-title">📅 Fecha y Hora</div>
-                        <div class="detail-item-value">18 de Junio, 13:00 Hrs</div>
+                        <div class="detail-item-title">Fecha y hora</div>
+                        <div class="detail-item-value">{{ event_date_label }}</div>
                     </div>
+                    {% endif %}
+                    {% if event_location_name %}
                     <div style="grid-column: span 2;">
                         <div class="detail-item-title">🗺️ Dirección</div>
                         <div class="detail-item-value" style="font-size: 0.85rem;">{{ event_location_address }}</div>
@@ -382,10 +398,7 @@
                             <a class="location-map-link" href="{{ event_location_map_url }}" target="_blank" rel="noopener">Abrir Google Maps</a>
                         </div>
                     </div>
-                    <div>
-                        <div class="detail-item-title">Monto pagado</div>
-                        <div class="detail-item-value">${{ group_total_paid|floatformat:2 }}</div>
-                    </div>
+                    {% endif %}
                     <div>
                         <div class="detail-item-title">No. sorteo</div>
                         <div class="detail-item-value">#{{ ticket_holder.raffle_number }}</div>
@@ -415,27 +428,7 @@
         </div>
     </div>
 
-    <script>
-        const qrImage = document.getElementById('qr-code');
-        const refreshBar = document.getElementById('refresh-bar');
-        const qrBaseUrl = "{% url 'qr_code_image' ticket_holder.uuid %}";
-        
-        let secondsLeft = 10;
-        
-        function refreshQR() {
-            qrImage.src = qrBaseUrl + "?t=" + new Date().getTime();
-            secondsLeft = 10;
-        }
-        
-        setInterval(() => {
-            secondsLeft -= 0.1;
-            if (secondsLeft <= 0) {
-                refreshQR();
-            } else {
-                const percentage = (secondsLeft / 10) * 100;
-                refreshBar.style.width = percentage + "%";
-            }
-        }, 100);
-    </script>
+    {% load static %}
+    <script src="{% static 'events/ticket.js' %}" defer></script>
 </body>
 </html>

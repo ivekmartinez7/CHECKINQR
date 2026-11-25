@@ -222,17 +222,19 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript"></script>
 <script>
     let html5QrcodeScanner;
     const readerElementId = "reader";
     let isScanning = false;
+    const csrfToken = '{{ csrf_token }}';
     
     // Web Audio API context
     const AudioContext = window.AudioContext || window.webkitAudioContext;
-    const audioCtx = new AudioContext();
+    const audioCtx = AudioContext ? new AudioContext() : null;
 
     function playTone(frequency, type, duration) {
+        if (!audioCtx) return;
         if (audioCtx.state === 'suspended') {
             audioCtx.resume();
         }
@@ -269,32 +271,38 @@
         
         document.getElementById('scan-btn').style.display = 'inline-block';
 
-        if (decodedText.includes('/group-checkin/')) {
-            window.location.href = decodedText;
-            return;
-        }
-        
-        // Determine if it is a dynamic URL or a static UUID
-        let url = '/api/checkin/';
-        let options = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: 'uuid=' + encodeURIComponent(decodedText)
+        const value = decodedText.trim();
+        const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+        const headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest'
         };
-        
-        if (decodedText.includes('/api/checkin-dynamic/')) {
-            url = decodedText;
-            options = {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            };
+        let url = '{% url "api_check_in" %}';
+        const options = {method: 'POST', headers, credentials: 'same-origin'};
+        if (new RegExp('^' + uuid + '$', 'i').test(value)) {
+            options.body = new URLSearchParams({uuid: value});
+        } else {
+            let qr;
+            try {
+                qr = new URL(value, window.location.origin);
+            } catch {
+                showResult({success: false, message: 'El código no es un boleto de CheckInQR.'});
+                return;
+            }
+            const route = new RegExp('^/(group-checkin|api/checkin-dynamic)/' + uuid + '/[0-9a-f]{32}/$', 'i');
+            const valid = qr.origin === window.location.origin && route.exec(qr.pathname);
+            if (!valid) {
+                showResult({success: false, message: 'Abre el boleto actualizado de este evento.'});
+                return;
+            }
+            if (valid[1] === 'group-checkin') {
+                window.location.assign(qr.pathname);
+                return;
+            }
+            url = qr.pathname;
         }
-        
+
         // Send to backend
         fetch(url, options)
         .then(response => response.json())
@@ -326,6 +334,10 @@
 
     function startScanner() {
         document.getElementById('result-card').style.display = 'none';
+        if (typeof Html5QrcodeScanner !== 'function') {
+            showResult({success: false, message: 'Cámara no disponible. Usa la búsqueda manual.'});
+            return;
+        }
         document.getElementById('scan-btn').style.display = 'none';
         
         html5QrcodeScanner = new Html5QrcodeScanner(

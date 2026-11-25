@@ -166,6 +166,7 @@
                     <span class="status-pill status-pending">Pendiente</span>
                     <form method="POST">
                         {% csrf_token %}
+                        <input type="hidden" name="confirmation_token" value="{{ confirmation_token }}">
                         <input type="hidden" name="guest_id" value="{{ member.id }}">
                         <button type="submit" class="btn">Marcar llegada</button>
                     </form>

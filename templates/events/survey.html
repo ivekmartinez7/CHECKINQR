@@ -5,6 +5,7 @@
     <div class="glass-panel">
         <h2>Encuesta de satisfacción</h2>
         <p style="color: var(--text-muted);">Registro: {{ guest.name }}{% if guest.school %} · {{ guest.school }}{% endif %}</p>
+        {% if survey_error %}<p role="alert">{{ survey_error }}</p>{% endif %}
         <form method="POST">
             {% csrf_token %}
             {% for question in questions %}

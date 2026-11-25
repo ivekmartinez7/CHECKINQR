@@ -261,7 +261,10 @@
                             {% endif %}
                         </td>
                         <td style="padding: 0.75rem; text-align: center;">
-                            <a href="{% url 'delete_staff' staff.pk %}" style="color: var(--danger); text-decoration: none;" onclick="return confirm('¿Seguro que deseas eliminar el usuario del staff {{ staff.username }}?');">🗑️ Borrar</a>
+                            <form action="{% url 'delete_staff' staff.pk %}" method="post" onsubmit="return confirm('¿Eliminar este usuario?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn" style="color:var(--danger);">Eliminar</button>
+                            </form>
                         </td>
                     </tr>
                     {% empty %}

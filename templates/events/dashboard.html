@@ -467,8 +467,10 @@
                     </td>
                     <td>
                         {{ guest.phone|default:'-' }}<br>
-                        {% if guest.phone %}
-                        <a href="https://wa.me/{{ guest.phone }}?text=Hola%20{{ guest.name|urlencode }},%20tu%20registro%20est%C3%A1%20confirmado.%20Este%20boleto%20es%20para%201%20acceso%20individual{% if not guest.parent and guest.passes > 1 %}%20de%20un%20grupo%20de%20{{ guest.passes }}%20personas{% endif %}.%20Sorteo:%20%23{{ guest.raffle_number }}.%20D%C3%ADa:%20Jueves%2018%20Junio,%2013:00hrs.%20Lugar:%20Sal%C3%B3n%20Quinta%20Tecuanapan.%20Direcci%C3%B3n:%20Del%20Campesino%2040,%20Obrero%20Campesina,%2091020%20Xalapa-Enr%C3%ADquez,%20Ver.%20Mapa:%20https%3A%2F%2Fwww.google.com%2Fmaps%2Fsearch%2F%3Fapi%3D1%26query%3DSal%25C3%25B3n%2520Quinta%2520Tecuanapan%252C%2520Del%2520Campesino%252040%252C%2520Obrero%2520Campesina%252C%252091020%2520Xalapa-Enr%25C3%25ADquez%252C%2520Ver.%20Aqu%C3%AD%20est%C3%A1%20tu%20boleto%20digital%20y%20c%C3%B3digo%20QR%20para%20entrar:%20https://checkinparty.systemsivek.win/ticket/{{ guest.uuid }}/" target="_blank" class="qr-link">WhatsApp</a>
+                        {% if guest.whatsapp_link %}
+                        <a href="{{ guest.whatsapp_link }}" target="_blank" rel="noopener noreferrer" class="qr-link">Enviar boleto por WhatsApp</a>
+                        {% elif guest.phone %}
+                        <span class="action-muted">Revisa el número</span>
                         {% endif %}
                     </td>
                     <td>
@@ -493,7 +495,7 @@
                         {% if guest.is_checked_in %}
                             <span class="status-badge status-yes">Asistió</span>
                             {% if request.user.is_superuser %}
-                            <br><a href="{% url 'reset_checkin' guest.pk %}" class="qr-link" style="font-size: 0.8rem;" onclick="return confirm('¿Regresar este pase a Pendiente?');">Resetear</a>
+                            <form action="{% url 'reset_checkin' guest.pk %}" method="post" style="display:inline" onsubmit="return confirm('¿Regresar este pase a Pendiente?');">{% csrf_token %}<button type="submit" class="qr-link">Volver a pendiente</button></form>
                             {% endif %}
                         {% else %}
                             <span class="status-badge status-no">Pendiente</span>
@@ -503,10 +505,10 @@
                         {% if request.user.is_superuser %}
                         <div class="actions-list">
                             <a href="{% url 'guest_ticket' guest.uuid %}" target="_blank" class="action-btn action-primary" title="Abrir boleto dinámico">Boleto</a>
-                            <button type="button" class="action-btn copy-ticket-btn" data-url="{{ request.scheme }}://{{ request.get_host }}{% url 'guest_ticket' guest.uuid %}" title="Copiar link del boleto">Copiar link</button>
+                            <button type="button" class="action-btn copy-ticket-btn" data-url="{{ guest.ticket_url }}" title="Copiar link del boleto">Copiar link</button>
                             {% if guest.email %}
                             <button type="button" class="action-btn copy-email-btn" data-email="{{ guest.email }}" title="Copiar correo">Copiar correo</button>
-                            <a href="{% url 'resend_email' guest.pk %}" class="action-btn action-warn" title="Reenviar boleto dinámico por correo">Reenviar</a>
+                            <form action="{% url 'resend_email' guest.pk %}" method="post" style="display:inline">{% csrf_token %}<button type="submit" class="action-btn action-warn">Reenviar correo</button></form>
                             {% else %}
                             <span class="action-muted">Sin correo</span>
                             {% endif %}
@@ -515,7 +517,7 @@
                             <button type="button" class="action-btn action-primary manual-checkin-btn" data-url="{% url 'manual_checkin' guest.pk %}" data-name="{{ guest.name }}" title="Marcar asistencia después de identificar al invitado">Check-in manual</button>
                             {% endif %}
                             <a href="{% url 'edit_guest' guest.pk %}" class="action-btn" title="Editar">Editar</a>
-                            <a href="{% url 'delete_guest' guest.pk %}" class="action-btn action-danger" onclick="return confirm('¿Seguro que deseas eliminar a este invitado?');" title="Eliminar">Eliminar</a>
+                            <form action="{% url 'delete_guest' guest.pk %}" method="post" style="display:inline" onsubmit="return confirm('¿Seguro que deseas eliminar a este invitado?');">{% csrf_token %}<button type="submit" class="action-btn action-danger">Eliminar</button></form>
                         </div>
                         {% else %}
                         <a href="{% url 'guest_ticket' guest.uuid %}" target="_blank" class="action-btn action-primary" title="Abrir boleto dinámico">Boleto</a>
@@ -554,7 +556,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         const passesInput = document.getElementById('passes-input');

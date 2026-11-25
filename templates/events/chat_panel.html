@@ -7,7 +7,9 @@
     <div class="chat-header">
         <h3>Chat de Staff</h3>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
+        {% if request.user.is_superuser %}
             <button onclick="clearChatHistory()" title="Limpiar conversación" style="background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.85rem; padding: 0.2rem; font-weight: 800;">Limpiar</button>
+        {% endif %}
             <button class="chat-close" onclick="toggleChat()">✕</button>
         </div>
     </div>
@@ -21,7 +23,9 @@
         <form id="chat-form" onsubmit="sendTextMessage(event)" style="width: 100%; display: flex; flex-direction: column; gap: 0.5rem;">
             <div style="display: flex; gap: 0.5rem; align-items: center; position: relative;">
                 <input type="text" id="chat-text-input" placeholder="Escribe un mensaje..." autocomplete="off">
+        {% if chat_audio_enabled %}
                 <button type="button" id="record-btn" class="chat-icon-btn" onclick="toggleRecording()" title="Grabar nota de voz">
+        {% endif %}
                     🎤
                 </button>
                 <button type="submit" class="chat-icon-btn chat-send-btn">
@@ -292,19 +296,22 @@
         const isSent = msg.sender_id === currentUserId;
         bubble.className = `chat-bubble ${isSent ? 'sent' : 'received'} ${msg.audio_url ? 'voice-bubble' : ''}`;
         
-        let content = '';
-        content += `<span class="chat-sender">${msg.sender}</span>`;
-        
-        if (msg.text) {
-            content += `<div>${msg.text}</div>`;
+        function addText(tag, className, value) {
+            const node = document.createElement(tag);
+            node.className = className;
+            node.textContent = value;
+            bubble.appendChild(node);
         }
-        
+        addText('span', 'chat-sender', msg.sender);
+        if (msg.text) addText('div', '', msg.text);
         if (msg.audio_url) {
-            content += `<audio src="${msg.audio_url}" controls preload="metadata"></audio>`;
+            const audio = document.createElement('audio');
+            audio.src = msg.audio_url;
+            audio.controls = true;
+            audio.preload = 'metadata';
+            bubble.appendChild(audio);
         }
-        
-        content += `<span class="chat-time">${msg.created_at}</span>`;
-        bubble.innerHTML = content;
+        addText('span', 'chat-time', msg.created_at);
         
         history.appendChild(bubble);
         
@@ -347,7 +354,8 @@
         fetch('/api/chat/messages/', {
             method: 'DELETE',
             headers: {
-                'X-Requested-With': 'XMLHttpRequest'
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': '{{ csrf_token }}'
             }
         })
         .then(res => res.json())
@@ -378,6 +386,7 @@
         
         fetch('/api/chat/messages/', {
             method: 'POST',
+            headers: {'X-CSRFToken': '{{ csrf_token }}'},
             body: formData
         })
         .then(res => res.json())
@@ -481,6 +490,7 @@
         
         fetch('/api/chat/messages/', {
             method: 'POST',
+            headers: {'X-CSRFToken': '{{ csrf_token }}'},
             body: formData
         })
         .then(res => res.json())

@@ -2,6 +2,9 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('healthz', views.healthz, name='healthz'),
+    path('robots.txt', views.robots_txt, name='robots_txt'),
+    path('api/chat/audio/<int:pk>/', views.chat_audio, name='chat_audio'),
     path('', views.dashboard, name='dashboard'),
     path('guest/<int:pk>/edit/', views.edit_guest, name='edit_guest'),
     path('guest/<int:pk>/delete/', views.delete_guest, name='delete_guest'),
