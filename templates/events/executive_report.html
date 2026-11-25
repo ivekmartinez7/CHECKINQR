@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load l10n %}
 
 {% block extra_css %}
 <style>
@@ -102,7 +103,7 @@
             type: 'bar',
             data: {
                 labels: ['Asistieron', 'Pendientes'],
-                datasets: [{ data: [{{ summary.checked_in }}, {{ summary.pending }}], backgroundColor: ['#10b981', '#ef4444'] }]
+                datasets: [{ data: [{{ summary.checked_in|unlocalize }}, {{ summary.pending|unlocalize }}], backgroundColor: ['#10b981', '#ef4444'] }]
             },
             options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
         });
@@ -110,7 +111,7 @@
             type: 'doughnut',
             data: {
                 labels: ['Titulares', 'Invitados'],
-                datasets: [{ data: [{{ summary.holders_paid }}, {{ summary.companions_paid }}], backgroundColor: ['#6366f1', '#f59e0b'] }]
+                datasets: [{ data: [{{ summary.holders_paid|unlocalize }}, {{ summary.companions_paid|unlocalize }}], backgroundColor: ['#6366f1', '#f59e0b'] }]
             },
             options: { plugins: { legend: { labels: { color: '#94a3b8' } } } }
         });

@@ -214,3 +214,38 @@ class ReleaseTests(TestCase):
             self.assertEqual(self.client.post(url, {'username': 'prueba-ausente', 'password': ''}).status_code, 200)
         self.assertEqual(self.client.post(url, {'username': 'prueba-ausente', 'password': ''}).status_code, 429)
         cache.clear()
+
+
+class ExecutiveReportTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = get_user_model().objects.create_superuser('report-admin')
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_empty_report_and_json_are_read_only(self):
+        SatisfactionQuestion.objects.all().delete()
+
+        page = self.client.get(reverse('executive_report'))
+        self.assertContains(page, 'Reporte Ejecutivo')
+        self.assertEqual(page.context['summary']['total'], 0)
+        data = self.client.get(reverse('executive_report_json')).json()
+        self.assertEqual(data['summary']['total_paid'], 0)
+        self.assertEqual(data['survey'], [])
+        self.assertFalse(SatisfactionQuestion.objects.exists())
+
+    def test_filtered_report_and_export_agree(self):
+        Guest.objects.create(name='Invitada', gender='F', school='Escuela de prueba',
+                             amount_paid='125.50', is_checked_in=True)
+        Guest.objects.create(name='Invitado', gender='M', amount_paid='42.00')
+        filters = {'gender': 'F'}
+
+        page = self.client.get(reverse('executive_report'), filters)
+        self.assertContains(page, 'Escuela de prueba')
+        data = self.client.get(reverse('executive_report_json'), filters).json()
+        self.assertEqual(data['filters'], filters)
+        self.assertEqual(data['summary'], page.context['summary'])
+        self.assertEqual(data['summary']['total'], 1)
+        self.assertEqual(data['summary']['attendance_rate'], 100.0)
+        self.assertEqual(data['summary']['total_paid'], 125.50)

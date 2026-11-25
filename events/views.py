@@ -932,7 +932,6 @@ def import_excel(request):
 
 
 def build_executive_report_data(gender_filter=''):
-    ensure_default_survey_questions()
     guests = Guest.objects.select_related('role', 'parent').all()
     if gender_filter:
         guests = guests.filter(gender=gender_filter)
