@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+from base64 import b64decode
+from binascii import Error as Base64Error
 from pathlib import Path
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
@@ -25,7 +27,15 @@ IS_RENDER = os.getenv('RENDER', '').lower() == 'true'
 DEBUG = not IS_RENDER and os.getenv('DJANGO_DEBUG', '').lower() in ('true', '1', 't')
 SECRET_KEY = os.getenv('SECRET_KEY', '')
 if IS_RENDER and len(SECRET_KEY) < 50:
-    raise ImproperlyConfigured('Configura SECRET_KEY con al menos 50 caracteres aleatorios.')
+    # Render generates a base64-encoded 256-bit secret. Represent it as
+    # hexadecimal for Django's minimum-length deployment check.
+    try:
+        raw_key = b64decode(SECRET_KEY, validate=True)
+    except (Base64Error, ValueError):
+        raw_key = b''
+    if len(raw_key) != 32:
+        raise ImproperlyConfigured('Configura una SECRET_KEY aleatoria o deja que Render la genere.')
+    SECRET_KEY = raw_key.hex()
 if not SECRET_KEY:
     # Only used by local development and isolated tests.
     SECRET_KEY = 'django-insecure-local-checkinqr-test-key-not-for-public-deploys'
